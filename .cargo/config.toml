@@ -1,2 +1,8 @@
 [alias]
 pgrx = ["bin", "cargo-pgrx"]
+
+# On macOS, PostgreSQL server symbols (palloc, SPI_*, etc.) are resolved when
+# the extension dylib is dlopen'd by the running postgres process. We must tell
+# the macOS linker to accept these undefined references at link time.
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-Wl,-undefined,dynamic_lookup"]

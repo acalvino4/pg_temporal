@@ -6,7 +6,11 @@ description = "Temporal-compliant date/time types for PostgreSQL"
 license = "MIT"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "pgrx_embed_pg_temporal"
+path = "./src/bin/pgrx_embed.rs"
 
 [features]
 default = ["pg18"]
@@ -15,10 +19,25 @@ pg_test = []
 
 [dependencies]
 pgrx = { version = "=0.17.0", default-features = false }
-temporal_rs = { version = "0.2.0", default-features = false, features = ["compiled_data"] }
+temporal_rs = { version = "0.2.0", default-features = false, features = [
+    "compiled_data",
+] }
+serde = { version = "1", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 pgrx-tests = "=0.17.0"
 
 [package.metadata.bin]
 cargo-pgrx = { version = "0.17.0", locked = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Pre-release project; these cargo metadata fields aren't meaningful yet.
+cargo_common_metadata = "allow"
+# Transitive dependency version conflicts we don't control.
+multiple_crate_versions = "allow"
