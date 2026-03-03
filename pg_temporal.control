@@ -1,0 +1,6 @@
+comment = 'Temporal-compliant date/time types for PostgreSQL'
+default_version = '0.0.1'
+module_pathname = '$libdir/pg_temporal'
+relocatable = false
+schema = 'pg_temporal'
+superuser = true

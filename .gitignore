@@ -1,0 +1,11 @@
+# cargo-run-bin local binary cache
+.bin/
+
+# Rust build artifacts
+target/
+
+# pgrx local test cluster (project-level, if created)
+.pgrx/
+
+# Editor
+.DS_Store

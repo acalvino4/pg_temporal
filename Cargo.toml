@@ -1,0 +1,24 @@
+[package]
+name = "pg_temporal"
+version = "0.0.1"
+edition = "2024"
+description = "Temporal-compliant date/time types for PostgreSQL"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["pg18"]
+pg18 = ["pgrx/pg18"]
+pg_test = []
+
+[dependencies]
+pgrx = { version = "=0.17.0", default-features = false }
+temporal_rs = { version = "0.2.0", default-features = false, features = ["compiled_data"] }
+
+[dev-dependencies]
+pgrx-tests = "=0.17.0"
+
+[package.metadata.bin]
+cargo-pgrx = { version = "0.17.0", locked = true }
