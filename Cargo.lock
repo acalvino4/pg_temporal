@@ -1027,6 +1027,7 @@ dependencies = [
  "pgrx-tests",
  "serde",
  "temporal_rs",
+ "timezone_provider",
 ]
 
 [[package]]

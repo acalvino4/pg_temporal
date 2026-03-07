@@ -204,3 +204,163 @@ fn reject_input_wrong_offset_for_zone() {
     // Asia/Tokyo is always +09:00; +00:00 is wrong.
     Spi::run("SELECT '2025-03-01T11:16:10+00:00[Asia/Tokyo]'::temporal.zoneddatetime").unwrap();
 }
+
+// -----------------------------------------------------------------------
+// Comparison
+// -----------------------------------------------------------------------
+
+/// Comparing a value with itself returns 0.
+#[pg_test]
+fn compare_same_value_is_zero() {
+    let r = Spi::get_one::<i32>(
+        "SELECT zoned_datetime_compare(
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, 0);
+}
+
+/// Earlier instant compares less than later instant.
+#[pg_test]
+fn compare_earlier_less_than_later() {
+    let r = Spi::get_one::<i32>(
+        "SELECT zoned_datetime_compare(
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            '2025-03-02T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r < 0);
+}
+
+/// Same instant in different zones are not equal (identity equality).
+#[pg_test]
+fn compare_same_instant_different_zone_not_equal() {
+    let r = Spi::get_one::<i32>(
+        "SELECT zoned_datetime_compare(
+            '2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime,
+            '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_ne!(r, 0, "same instant in different zones must not compare equal");
+}
+
+/// `<` operator: earlier instant is less.
+#[pg_test]
+fn operator_lt_true() {
+    let r = Spi::get_one::<bool>(
+        "SELECT '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+                < '2025-03-02T00:00:00+00:00[UTC]'::temporal.zoneddatetime",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r);
+}
+
+/// `=` operator: identical values are equal.
+#[pg_test]
+fn operator_eq_true() {
+    let r = Spi::get_one::<bool>(
+        "SELECT '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+                = '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r);
+}
+
+/// `=` operator: same instant, different zone → false (identity equality).
+#[pg_test]
+fn operator_eq_false_different_zone() {
+    let r = Spi::get_one::<bool>(
+        "SELECT '2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime
+                = '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(!r);
+}
+
+/// ORDER BY sorts zoned datetimes chronologically via the btree operator class.
+#[pg_test]
+fn zdt_order_by() {
+    let r = Spi::get_one::<String>(
+        "SELECT string_agg(v::text, ',' ORDER BY v) FROM (VALUES
+            ('2025-03-03T00:00:00+00:00[UTC]'::temporal.zoneddatetime),
+            ('2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime),
+            ('2025-03-02T00:00:00+00:00[UTC]'::temporal.zoneddatetime)
+         ) t(v)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        r,
+        "2025-03-01T00:00:00+00:00[UTC],2025-03-02T00:00:00+00:00[UTC],2025-03-03T00:00:00+00:00[UTC]"
+    );
+}
+
+// -----------------------------------------------------------------------
+// Arithmetic
+// -----------------------------------------------------------------------
+
+/// Adding PT1H to a UTC midnight yields 01:00.
+#[pg_test]
+fn add_one_hour_utc() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoned_datetime_add(
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            'PT1H'::temporal.duration
+        )::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-03-01T01:00:00+00:00[UTC]");
+}
+
+/// Subtracting PT1H from 01:00 UTC yields midnight.
+#[pg_test]
+fn subtract_one_hour_utc() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoned_datetime_subtract(
+            '2025-03-01T01:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            'PT1H'::temporal.duration
+        )::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-03-01T00:00:00+00:00[UTC]");
+}
+
+/// `until`: difference between two UTC instants 2 hours apart is PT2H.
+#[pg_test]
+fn until_two_hours() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoned_datetime_until(
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime
+        )::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "PT2H");
+}
+
+/// `since`: elapsed time from other to self over 2 hours is PT2H.
+#[pg_test]
+fn since_two_hours() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoned_datetime_since(
+            '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+        )::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "PT2H");
+}

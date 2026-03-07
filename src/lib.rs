@@ -4,6 +4,7 @@ use pgrx::prelude::*;
 
 pub mod catalog;
 pub mod gucs;
+pub mod provider;
 pub mod types;
 
 /// Called once when the extension shared library is loaded into a backend.
@@ -22,4 +23,16 @@ pub mod pg_test {
         // reference types and functions without schema-qualifying every call.
         vec!["search_path = 'temporal, public'"]
     }
+}
+
+// All #[pg_test] functions must live in a single `mod tests` so pgrx's test
+// runner can find them in the "tests" schema.  Each type keeps its test code
+// in a dedicated file; we include those files here.
+#[cfg(any(test, feature = "pg_test"))]
+#[pg_schema]
+mod tests {
+    include!("types/zoned_datetime/tests.rs");
+    include!("types/instant/tests.rs");
+    include!("types/plain_datetime/tests.rs");
+    include!("types/duration/tests.rs");
 }

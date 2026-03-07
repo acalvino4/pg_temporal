@@ -115,3 +115,10 @@ pg_temporal/
 - The extension schema is `temporal`, not `pg_temporal`. Schema names starting with `pg_` are reserved for PostgreSQL system schemas and cannot be created even by superusers. The extension package is still named `pg_temporal`.
 - PostgreSQL type names are case-folded to lowercase. `#[derive(PostgresType)]` on a struct named `ZonedDateTime` creates a SQL type called `zoneddatetime` (not `zoned_datetime`). Always verify type names against `cargo pgrx schema` output, not the Rust struct name.
 - `pg_test::postgresql_conf_options()` in `src/lib.rs` adds entries to `target/test-pgdata/18/postgresql.auto.conf`. This is how the `temporal` schema is added to `search_path` for all test sessions. If you modify this function, delete `target/test-pgdata/` to force reinitialization, since pgrx only writes the file when the data directory is first created.
+- If spec ever deviates from Temporal, assume the spec is wrong and Temporal is right.
+
+## Todos
+
+- Timezone type?
+- Check on how zoned datetimes are ordered
+- Ensure tz's or other data is not dependant on system

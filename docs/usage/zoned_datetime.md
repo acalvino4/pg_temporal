@@ -1,18 +1,24 @@
-# zoneddatetime
+# ZonedDateTime
 
-`temporal.zoneddatetime` is a timezone-aware, calendar-aware datetime type with nanosecond precision. It is the pg_temporal equivalent of the [Temporal `ZonedDateTime`](https://tc39.es/proposal-temporal/#sec-temporal-zoneddatetime) type.
+`temporal.zoneddatetime` is a timezone-aware, calendar-aware datetime type with nanosecond precision. It is the pg_temporal equivalent of the [TC39 Temporal `ZonedDateTime`](https://tc39.es/proposal-temporal/#sec-temporal-zoneddatetime).
 
-## Storage
+A `ZonedDateTime` is the most complete datetime representation: it knows the exact instant on the timeline **and** the human timezone context it was observed in. Use it for timestamps that must round-trip with full timezone fidelity — scheduling, audit logs, calendar events.
 
-Each value stores three fields:
+## Quick start
 
-| Field          | Type   | Description                                                          |
-| -------------- | ------ | -------------------------------------------------------------------- |
-| `instant_ns`   | `i128` | Nanoseconds since Unix epoch (same as Temporal's `epochNanoseconds`) |
-| `tz_oid`       | `i32`  | Row ID in `temporal.timezone_catalog`                                |
-| `calendar_oid` | `i32`  | Row ID in `temporal.calendar_catalog`                                |
+```sql
+-- Store a zoned datetime
+INSERT INTO events (ts) VALUES
+  ('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime);
 
-The full IANA timezone identifier and calendar name are stored in the extension's catalog tables rather than inline, keeping the binary representation compact and normalizing alias resolution at insert time.
+-- Read it back (identical round-trip)
+SELECT ts FROM events;
+-- 2025-03-01T11:16:10+09:00[Asia/Tokyo]
+
+-- Extract fields
+SELECT zoned_datetime_timezone(ts), zoned_datetime_epoch_ns(ts)::numeric
+FROM events;
+```
 
 ## Text format
 
@@ -20,23 +26,26 @@ Input and output use the [IXDTF format (RFC 9557)](https://www.rfc-editor.org/rf
 
 ```
 2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=iso8601]
+│                  │      │           └─ calendar annotation (optional)
+│                  │      └─ IANA timezone annotation (required)
+│                  └─ UTC offset (required for unambiguous parsing)
+└─ ISO 8601 date/time
 ```
 
-Components:
+The UTC offset and IANA timezone annotation are both required on input. If they disagree and the wall-clock time is unambiguous, the IANA timezone wins and the offset is recomputed. If the wall-clock time is ambiguous (DST gap or fold), the `pg_temporal.default_disambiguation` GUC controls resolution. The calendar annotation is optional; it defaults to `iso8601`.
 
-- ISO 8601 date/time
-- UTC offset (required for unambiguous parsing)
-- IANA timezone annotation in `[...]`
-- Calendar annotation in `[u-ca=...]` (optional; defaults to `iso8601`)
+Output always includes the UTC offset, IANA annotation, and (for non-ISO calendars) the calendar annotation.
 
 ## SQL functions
 
 ### `zoned_datetime_timezone(zdt zoneddatetime) → text`
 
-Returns the IANA timezone identifier stored with the value.
+Returns the IANA timezone identifier stored with the value. Timezone aliases are resolved to canonical IANA names at insert time according to `pg_temporal.alias_policy`.
 
 ```sql
-SELECT zoned_datetime_timezone('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime);
+SELECT zoned_datetime_timezone(
+  '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
+);
 -- Asia/Tokyo
 ```
 
@@ -45,30 +54,37 @@ SELECT zoned_datetime_timezone('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal
 Returns the calendar identifier stored with the value.
 
 ```sql
-SELECT zoned_datetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime);
+SELECT zoned_datetime_calendar(
+  '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
+);
 -- iso8601
 ```
 
 ### `zoned_datetime_epoch_ns(zdt zoneddatetime) → text`
 
-Returns the UTC epoch in nanoseconds as text. (There is no native 128-bit integer SQL type; cast to `numeric` for arithmetic.)
+Returns the UTC instant as nanoseconds since the Unix epoch. The value is returned as `text` because there is no native 128-bit integer SQL type; cast to `numeric` for arithmetic.
 
 ```sql
-SELECT zoned_datetime_epoch_ns('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)::numeric;
+SELECT zoned_datetime_epoch_ns(
+  '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
+)::numeric;
+-- 1740791770000000000
 ```
 
 ## Configuration
 
+Both GUCs are registered under `pg_temporal`.
+
 ### `pg_temporal.default_disambiguation`
 
-Controls how a wall-clock time that falls in a DST gap or fold is resolved. Settable per-session (`SET`).
+Controls how a wall-clock time falling in a DST gap or fold is resolved. Settable per-session with `SET`.
 
-| Value                  | Behavior                                        |
-| ---------------------- | ----------------------------------------------- |
-| `compatible` (default) | Earlier time for folds, later time for gaps     |
-| `earlier`              | Always the earlier of the two possible instants |
-| `later`                | Always the later of the two possible instants   |
-| `reject`               | Raise an error on any ambiguous input           |
+| Value                  | Behavior                                                    |
+| ---------------------- | ----------------------------------------------------------- |
+| `compatible` (default) | Gap → later time; fold → earlier time (matches Temporal JS) |
+| `earlier`              | Always the earlier of the two possible instants             |
+| `later`                | Always the later of the two possible instants               |
+| `reject`               | Raise an error for any ambiguous input                      |
 
 ```sql
 SET pg_temporal.default_disambiguation = 'reject';
@@ -76,31 +92,20 @@ SET pg_temporal.default_disambiguation = 'reject';
 
 ### `pg_temporal.alias_policy`
 
-Controls timezone alias resolution. Requires superuser (`ALTER SYSTEM` / `ALTER DATABASE`).
+Controls timezone alias resolution at insert time. Requires superuser (`ALTER SYSTEM` / `ALTER DATABASE`).
 
 | Value            | Behavior                        |
 | ---------------- | ------------------------------- |
-| `iana` (default) | Use IANA canonical names        |
-| `jodatime`       | Use JodaTime-compatible aliases |
-
-## Catalog tables
-
-Timezone and calendar names are normalized into two extension-managed tables:
-
-```sql
-temporal.timezone_catalog (tz_oid serial, canonical_id text, aliases text[])
-temporal.calendar_catalog  (calendar_oid serial, calendar_id text)
-```
-
-OIDs are assigned on first use. `calendar_oid = 1` is always `iso8601`.
+| `iana` (default) | Resolve to IANA canonical names |
+| `jodatime`       | Resolve using JodaTime aliases  |
 
 ## Identity equality
 
-Two `zoneddatetime` values are equal only when their **instant, timezone, and calendar** all match — consistent with Temporal's identity equality semantics. `2025-03-01T02:16:10+00:00[UTC]` and `2025-03-01T11:16:10+09:00[Asia/Tokyo]` represent the same instant but are **not equal** because their zones differ.
+Two `ZonedDateTime` values are considered the same only when their **instant, timezone, and calendar** all match — consistent with [Temporal's identity equality semantics](https://tc39.es/proposal-temporal/#sec-temporal-zoneddatetime-equals). `2025-03-01T02:16:10+00:00[UTC]` and `2025-03-01T11:16:10+09:00[Asia/Tokyo]` represent the same instant but are **not equal** because their zones differ.
 
 ## Planned
 
-- Comparison operators (`<`, `>`, `=`, etc.) — ordering by instant, breaking ties by zone/calendar OID
+- Comparison operators (`<`, `<=`, `=`, `>=`, `>`)
 - Arithmetic functions (`add`, `subtract`, `until`, `since`)
 - Constructor functions
-- Cast from/to `timestamptz` (explicit only)
+- Cast from/to `timestamptz` (explicit casts only)

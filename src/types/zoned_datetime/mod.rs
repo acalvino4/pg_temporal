@@ -1,15 +1,22 @@
 use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, TimeZone, ZonedDateTime as TemporalZdt,
     options::{
-        DisplayCalendar, DisplayOffset, DisplayTimeZone, OffsetDisambiguation,
-        ToStringRoundingOptions,
+        DifferenceSettings, DisplayCalendar, DisplayOffset, DisplayTimeZone, OffsetDisambiguation,
+        Overflow, ToStringRoundingOptions,
     },
 };
 
 use crate::gucs;
+use crate::provider::TZ_PROVIDER;
+use crate::types::catalog::{
+    lookup_calendar_by_oid, lookup_or_insert_calendar, lookup_or_insert_timezone,
+    lookup_timezone_by_oid,
+};
+use crate::types::duration::Duration;
 
 // ---------------------------------------------------------------------------
 // Storage type
@@ -95,68 +102,6 @@ impl InOutFuncs for ZonedDateTime {
 }
 
 // ---------------------------------------------------------------------------
-// Catalog helpers
-// ---------------------------------------------------------------------------
-
-/// Escape a string value for safe embedding in a SQL literal.
-///
-/// IANA timezone identifiers and calendar IDs are ASCII-only and never
-/// contain single quotes, but we escape defensively.
-fn escape_sql_literal(s: &str) -> String {
-    s.replace('\'', "''")
-}
-
-/// Return the existing `tz_oid` for `tz_id`, inserting a new row if needed.
-fn lookup_or_insert_timezone(tz_id: &str) -> i32 {
-    let esc = escape_sql_literal(tz_id);
-
-    // Upsert: insert new row OR return the existing one atomically.
-    // The DO UPDATE SET touches no column so Postgres still returns the OID.
-    Spi::get_one::<i32>(&format!(
-        "INSERT INTO temporal.timezone_catalog (canonical_id)
-         VALUES ('{esc}')
-         ON CONFLICT (canonical_id) DO UPDATE
-             SET canonical_id = EXCLUDED.canonical_id
-         RETURNING tz_oid"
-    ))
-    .unwrap_or_else(|e| error!("timezone catalog insert failed: {e}"))
-    .unwrap_or_else(|| error!("timezone catalog insert returned no row"))
-}
-
-/// Return the existing `calendar_oid` for `cal_id`, inserting a new row if needed.
-fn lookup_or_insert_calendar(cal_id: &str) -> i32 {
-    let esc = escape_sql_literal(cal_id);
-
-    Spi::get_one::<i32>(&format!(
-        "INSERT INTO temporal.calendar_catalog (calendar_id)
-         VALUES ('{esc}')
-         ON CONFLICT (calendar_id) DO UPDATE
-             SET calendar_id = EXCLUDED.calendar_id
-         RETURNING calendar_oid"
-    ))
-    .unwrap_or_else(|e| error!("calendar catalog insert failed: {e}"))
-    .unwrap_or_else(|| error!("calendar catalog insert returned no row"))
-}
-
-/// Resolve a `tz_oid` back to its IANA identifier string.
-fn lookup_timezone_by_oid(tz_oid: i32) -> String {
-    Spi::get_one::<String>(&format!(
-        "SELECT canonical_id FROM temporal.timezone_catalog WHERE tz_oid = {tz_oid}"
-    ))
-    .unwrap_or_else(|e| error!("timezone catalog lookup failed: {e}"))
-    .unwrap_or_else(|| error!("unknown tz_oid {tz_oid}"))
-}
-
-/// Resolve a `calendar_oid` back to its calendar identifier string.
-fn lookup_calendar_by_oid(calendar_oid: i32) -> String {
-    Spi::get_one::<String>(&format!(
-        "SELECT calendar_id FROM temporal.calendar_catalog WHERE calendar_oid = {calendar_oid}"
-    ))
-    .unwrap_or_else(|e| error!("calendar catalog lookup failed: {e}"))
-    .unwrap_or_else(|| error!("unknown calendar_oid {calendar_oid}"))
-}
-
-// ---------------------------------------------------------------------------
 // Accessor functions exposed to SQL
 // ---------------------------------------------------------------------------
 
@@ -183,9 +128,209 @@ pub fn zoned_datetime_epoch_ns(zdt: ZonedDateTime) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Internal helpers for cross-module conversions
 // ---------------------------------------------------------------------------
 
-#[cfg(any(test, feature = "pg_test"))]
-#[pg_schema]
-mod tests;
+impl ZonedDateTime {
+    /// Reconstruct the `temporal_rs` representation from stored fields.
+    // Clippy's wrong_self_convention wants `to_*` on Copy types to take self by value.
+    pub(crate) fn to_temporal(self) -> TemporalZdt {
+        let tz_id = lookup_timezone_by_oid(self.tz_oid);
+        // Use our TZ_PROVIDER so the ResolvedId inside the TimeZone comes from the
+        // same provider we pass to add_with_provider / subtract_with_provider etc.
+        // Using the internal temporal_rs provider here would cause a ResolvedId
+        // mismatch and a "Time zone identifier does not exist" error at runtime.
+        let tz = TimeZone::try_from_str_with_provider(&tz_id, &*TZ_PROVIDER)
+            .unwrap_or_else(|e| error!("failed to load timezone \"{tz_id}\": {e}"));
+        let cal = Calendar::default();
+        TemporalZdt::try_new(self.instant_ns, tz, cal)
+            .unwrap_or_else(|e| error!("failed to reconstruct zoned_datetime: {e}"))
+    }
+
+    /// Build a `ZonedDateTime` from a `temporal_rs` zoned datetime.
+    #[allow(clippy::similar_names)] // tz_id (string) and tz_oid (integer) are semantically distinct
+    pub(crate) fn from_temporal(zdt: &TemporalZdt) -> Self {
+        let instant_ns = zdt.epoch_nanoseconds().as_i128();
+        let tz_id = zdt
+            .time_zone()
+            .identifier()
+            .unwrap_or_else(|e| error!("failed to get timezone identifier: {e}"));
+        let cal_id = zdt.calendar().identifier();
+        let tz_oid = lookup_or_insert_timezone(&tz_id);
+        let calendar_oid = lookup_or_insert_calendar(cal_id);
+        Self { instant_ns, tz_oid, calendar_oid }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Comparison functions
+// ---------------------------------------------------------------------------
+
+/// Returns -1, 0, or 1 comparing two zoned datetimes.
+/// Primary key: epoch nanoseconds; tiebreakers: timezone OID, calendar OID.
+/// Two values are equal only when instant, timezone, and calendar all match
+/// (Temporal identity equality).
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_compare(a: ZonedDateTime, b: ZonedDateTime) -> i32 {
+    let a_key = (a.instant_ns, a.tz_oid, a.calendar_oid);
+    let b_key = (b.instant_ns, b.tz_oid, b.calendar_oid);
+    match a_key.cmp(&b_key) {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
+    }
+}
+
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_lt(a: ZonedDateTime, b: ZonedDateTime) -> bool {
+    zoned_datetime_compare(a, b) < 0
+}
+
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_le(a: ZonedDateTime, b: ZonedDateTime) -> bool {
+    zoned_datetime_compare(a, b) <= 0
+}
+
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_eq(a: ZonedDateTime, b: ZonedDateTime) -> bool {
+    zoned_datetime_compare(a, b) == 0
+}
+
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_ne(a: ZonedDateTime, b: ZonedDateTime) -> bool {
+    zoned_datetime_compare(a, b) != 0
+}
+
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_ge(a: ZonedDateTime, b: ZonedDateTime) -> bool {
+    zoned_datetime_compare(a, b) >= 0
+}
+
+// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
+#[allow(clippy::missing_const_for_fn)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_gt(a: ZonedDateTime, b: ZonedDateTime) -> bool {
+    zoned_datetime_compare(a, b) > 0
+}
+
+extension_sql!(
+    r"
+    CREATE OPERATOR < (
+        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
+        FUNCTION = zoned_datetime_lt,
+        COMMUTATOR = >, NEGATOR = >=
+    );
+    CREATE OPERATOR <= (
+        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
+        FUNCTION = zoned_datetime_le,
+        COMMUTATOR = >=, NEGATOR = >
+    );
+    CREATE OPERATOR = (
+        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
+        FUNCTION = zoned_datetime_eq,
+        COMMUTATOR = =, NEGATOR = <>
+    );
+    CREATE OPERATOR <> (
+        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
+        FUNCTION = zoned_datetime_ne,
+        COMMUTATOR = <>, NEGATOR = =
+    );
+    CREATE OPERATOR >= (
+        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
+        FUNCTION = zoned_datetime_ge,
+        COMMUTATOR = <=, NEGATOR = <
+    );
+    CREATE OPERATOR > (
+        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
+        FUNCTION = zoned_datetime_gt,
+        COMMUTATOR = <, NEGATOR = <=
+    );
+    CREATE OPERATOR CLASS zoned_datetime_btree_ops DEFAULT FOR TYPE ZonedDateTime USING btree AS
+        OPERATOR 1  <,
+        OPERATOR 2  <=,
+        OPERATOR 3  =,
+        OPERATOR 4  >=,
+        OPERATOR 5  >,
+        FUNCTION 1  zoned_datetime_compare(ZonedDateTime, ZonedDateTime);
+    ",
+    name = "zoned_datetime_comparison_operators",
+    requires = [
+        zoned_datetime_lt,
+        zoned_datetime_le,
+        zoned_datetime_eq,
+        zoned_datetime_ne,
+        zoned_datetime_ge,
+        zoned_datetime_gt
+    ],
+);
+
+// ---------------------------------------------------------------------------
+// Arithmetic
+// ---------------------------------------------------------------------------
+
+/// Add a duration to a zoned datetime.
+/// Uses `Constrain` overflow and the compiled IANA TZDB for DST-aware
+/// wall-clock arithmetic.
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_add(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
+    let result = zdt
+        .to_temporal()
+        .add_with_provider(&dur.to_temporal(), Some(Overflow::Constrain), &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("zoned_datetime_add failed: {e}"));
+    ZonedDateTime::from_temporal(&result)
+}
+
+/// Subtract a duration from a zoned datetime.
+/// Uses `Constrain` overflow and the compiled IANA TZDB for DST-aware
+/// wall-clock arithmetic.
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_subtract(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
+    let result = zdt
+        .to_temporal()
+        .subtract_with_provider(&dur.to_temporal(), Some(Overflow::Constrain), &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("zoned_datetime_subtract failed: {e}"));
+    ZonedDateTime::from_temporal(&result)
+}
+
+/// Returns the duration elapsed from `other` to `zdt` (default unit: hours).
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_since(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
+    let d = zdt
+        .to_temporal()
+        .since_with_provider(&other.to_temporal(), DifferenceSettings::default(), &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("zoned_datetime_since failed: {e}"));
+    Duration::from_temporal(&d)
+}
+
+/// Returns the duration from `zdt` to `other` (default unit: hours).
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn zoned_datetime_until(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
+    let d = zdt
+        .to_temporal()
+        .until_with_provider(&other.to_temporal(), DifferenceSettings::default(), &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("zoned_datetime_until failed: {e}"));
+    Duration::from_temporal(&d)
+}

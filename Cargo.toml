@@ -22,6 +22,7 @@ pgrx = { version = "=0.17.0", default-features = false }
 temporal_rs = { version = "0.2.0", default-features = false, features = [
     "compiled_data",
 ] }
+timezone_provider = "0.2.0"
 serde = { version = "1", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
@@ -31,7 +32,6 @@ pgrx-tests = "=0.17.0"
 cargo-pgrx = { version = "0.17.0", locked = true }
 
 [lints.rust]
-unsafe_code = "forbid"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

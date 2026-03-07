@@ -117,12 +117,200 @@ Also removed:
 
 ---
 
-## Phase 3: Instant, PlainDateTime, Duration (next)
+## Phase 3: Instant, PlainDateTime, Duration (complete)
 
-Planned work:
+### New files
 
-- `temporal.instant` type — storage: `i128` epoch ns; in/out: RFC 9557 instant strings
-- `temporal.plain_datetime` type — calendar-local, no timezone
-- `temporal.duration` type — full vector (years → nanoseconds), no normalization
-- Arithmetic and comparison functions for all types
-- Comparison/ordering operators for `zoned_datetime` and `instant`
+```
+src/
+├── types/
+│   ├── catalog.rs                 # shared SPI catalog helpers (extracted from zoned_datetime)
+│   ├── instant/
+│   │   └── mod.rs                 # PostgresType impl, in/out funcs, SQL accessors
+│   ├── plain_datetime/
+│   │   └── mod.rs                 # PostgresType impl, in/out funcs, SQL accessors
+│   └── duration/
+│       └── mod.rs                 # PostgresType impl, in/out funcs, SQL accessors
+│   # tests for all four types live in their respective tests.rs files and are
+│   # included into a single mod tests in src/lib.rs
+```
+
+### Key decisions
+
+**Shared catalog helpers extracted to `src/types/catalog.rs`**
+The four SPI helpers (`lookup_or_insert_timezone`, `lookup_timezone_by_oid`, `lookup_or_insert_calendar`, `lookup_calendar_by_oid`) were previously private functions inside `zoned_datetime/mod.rs`. Phase 3 types also need catalog lookups, so they were promoted to `pub` functions in a shared `src/types/catalog.rs` module (declared `pub(crate)` in `src/types/mod.rs`).
+
+**`Instant` storage: `i128` epoch_ns only**
+An instant has no timezone or calendar. The single `epoch_ns: i128` field is sufficient and matches the pattern established by `ZonedDateTime`. Serialization uses `Instant::from_utf8` (parses any offset; normalizes to UTC) and `Instant::to_ixdtf_string(None, ...)` (outputs with `Z` suffix, compiled_data feature).
+
+**`PlainDateTime` storage: ISO fields + `calendar_oid`**
+Stores all nine ISO 8601 date/time fields plus `calendar_oid` for future multi-calendar support. Reconstruction uses `PlainDateTime::try_new_iso(...)` (ISO calendar only) in Phase 3. Output uses `to_ixdtf_string(ToStringRoundingOptions::default(), DisplayCalendar::Auto)` which omits the calendar annotation for iso8601.
+
+**`Duration` storage: ten signed fields matching temporal_rs accessors**
+The spec draft used `nanoseconds: i64` to collapse sub-second fields. The temporal_rs `Duration` separates `milliseconds: i64`, `microseconds: i128`, and `nanoseconds: i128` as distinct signed fields. The temporal_rs representation is the correct one; the spec draft was a mistake. Only `microseconds` and `nanoseconds` return `String` from SQL accessors (no native `i128` SQL type), matching the `epoch_ns` pattern from `ZonedDateTime`.
+
+**`unsafe_code = "forbid"` removed from `[lints.rust]`**
+The contributing guide states "There is no crate-level `unsafe_code` lint because it would fire on that macro-generated code." The `unsafe_code = "forbid"` entry in Cargo.toml was incorrect — it caused the `pgrx_embed_pg_temporal` binary to fail to compile once test functions were present (pgrx's `#[pg_extern]` and `#[pg_test]` macros generate `unsafe extern "Rust" {}` blocks for FFI registration). Removed. The rule is enforced by convention: no hand-written `unsafe` blocks in application code.
+
+**Consolidated `mod tests` in `src/lib.rs`**
+pgrx's test runner calls test functions as `SELECT "tests"."function_name"()` — the schema must be named `tests`. Having multiple `#[pg_schema] mod tests` blocks (one per type module) causes a symbol collision in the embed binary because pgrx generates a schema registration symbol based on the module name. The fix: all `#[pg_test]` functions live in a single `#[pg_schema] mod tests { ... }` in `src/lib.rs`, which `include!`s each type's `tests.rs` file. Test function names are prefixed (`instant_`, `pdt_`, `dur_`) to avoid global symbol conflicts.
+
+**Phase 3 generated SQL (via `cargo pgrx schema pg18`)**
+
+```sql
+-- new types
+CREATE TYPE Duration (...);
+CREATE TYPE Instant (...);
+CREATE TYPE PlainDateTime (...);
+
+-- Instant accessors
+CREATE FUNCTION instant_epoch_ns(inst Instant) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
+
+-- PlainDateTime accessors
+CREATE FUNCTION plain_datetime_year(pdt PlainDateTime)         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_month(pdt PlainDateTime)        RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_day(pdt PlainDateTime)          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_hour(pdt PlainDateTime)         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_minute(pdt PlainDateTime)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_second(pdt PlainDateTime)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_millisecond(pdt PlainDateTime)  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_microsecond(pdt PlainDateTime)  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_nanosecond(pdt PlainDateTime)   RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plain_datetime_calendar(pdt PlainDateTime)     RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
+
+-- Duration accessors
+CREATE FUNCTION duration_years(d Duration)        RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_months(d Duration)       RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_weeks(d Duration)        RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_days(d Duration)         RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_hours(d Duration)        RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_minutes(d Duration)      RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_seconds(d Duration)      RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_milliseconds(d Duration) RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_microseconds(d Duration) RETURNS TEXT   IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION duration_nanoseconds(d Duration)  RETURNS TEXT   IMMUTABLE STRICT PARALLEL SAFE ...;
+```
+
+---
+
+## Phase 4: Arithmetic, comparisons, and operators (complete)
+
+### New files
+
+```
+src/
+├── provider.rs                # process-wide LazyLock<CompiledTzdbProvider>
+└── types/
+    ├── zoned_datetime/tests.rs   # Phase 4 tests added
+    ├── instant/tests.rs          # Phase 4 tests added
+    ├── plain_datetime/tests.rs   # Phase 4 tests added
+    └── duration/tests.rs         # Phase 4 tests added
+```
+
+### Key decisions
+
+**`timezone_provider` crate for the process-wide TZDB provider**
+`temporal_rs`'s `tzdb` module is `pub(crate)` — the `CompiledTzdbProvider` must be imported from the companion `timezone_provider` crate (`timezone_provider::tzif::CompiledTzdbProvider`). A process-wide `static TZ_PROVIDER: LazyLock<CompiledTzdbProvider>` in `src/provider.rs` ensures the provider is initialized once and reused across all arithmetic calls.
+
+**Provider consistency in `ZonedDateTime::to_temporal()`**
+`temporal_rs` stores a `ResolvedId` inside each `TimeZone` value. This ID is an index into a specific provider's internal cache. If `TimeZone` is constructed with provider A but then passed to `add_with_provider(provider_b)`, the index is out-of-bounds for provider B and raises "Time zone identifier does not exist." The fix: `to_temporal()` uses `TimeZone::try_from_str_with_provider(&tz_id, &*TZ_PROVIDER)` so the `ResolvedId` always matches the provider used for arithmetic.
+
+**`to_temporal(self)` takes by value for Copy types**
+Clippy's `wrong_self_convention` lint fires on `to_*` methods that take `&self` when the type is `Copy`. All four storage structs (`ZonedDateTime`, `Instant`, `PlainDateTime`, `Duration`) are `Copy`, so `to_temporal` takes ownership (by value). The call site is `value.to_temporal()` — no change in ergonomics.
+
+**Operators via `extension_sql!`**
+pgrx 0.17 has no `#[pg_operator]` attribute. Operators (`<`, `<=`, `=`, `!=`, `>=`, `>`) are registered with `extension_sql!` blocks that emit `CREATE OPERATOR` SQL directly. Each block `requires = [...]` the underlying comparison functions so pgrx orders them correctly in the generated schema file.
+
+**Identity equality for `ZonedDateTime`**
+The Temporal spec's "ZonedDateTime equality" means instant + timezone + calendar all match. Two values representing the same instant in different zones are NOT equal. The `=` operator compares the `(instant_ns, tz_oid, calendar_oid)` tuple. `zoned_datetime_compare` uses the same tuple for ordering, making the order consistent with equality.
+
+**`instant_since` / `instant_until` return seconds by default**
+`Instant::since` and `Instant::until` with `DifferenceSettings::default()` normalize the result to seconds (the largest unit valid for an Instant, since Instants have no calendar context). The result for a 2-hour gap is `PT7200S`, not `PT2H`. This is correct Temporal behavior; tests assert `PT7200S`.
+
+**`DifferenceSettings::default()` for other types**
+`ZonedDateTime::since/until` and `PlainDateTime::since/until` with default settings use hours as the largest time unit, so a 2-hour gap returns `PT2H`. Day differences use `P1D`.
+
+### Phase 4 SQL (new functions per type)
+
+**`ZonedDateTime`**
+
+```sql
+CREATE FUNCTION zoned_datetime_compare(a ZonedDateTime, b ZonedDateTime) RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_lt(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_le(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_eq(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_ne(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_ge(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_gt(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR <  (FUNCTION = zoned_datetime_lt, LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime);
+-- ... and <=, =, !=, >=, >
+CREATE FUNCTION zoned_datetime_add(zdt ZonedDateTime, dur Duration)       RETURNS ZonedDateTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_subtract(zdt ZonedDateTime, dur Duration)  RETURNS ZonedDateTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_since(self ZonedDateTime, other ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoned_datetime_until(self ZonedDateTime, other ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+```
+
+**`Instant`** — same pattern: `instant_compare`, `instant_lt/le/eq/ne/ge/gt`, operators, `instant_add/subtract/since/until`.
+
+**`PlainDateTime`** — same pattern: `plain_datetime_compare`, `plain_datetime_lt/le/eq/ne/ge/gt`, operators, `plain_datetime_add/subtract/since/until`.
+
+**`Duration`**
+
+```sql
+CREATE FUNCTION duration_negated(d Duration)               RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_abs(d Duration)                   RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_sign(d Duration)                  RETURNS INT      IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_is_zero(d Duration)               RETURNS BOOL     IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_add(a Duration, b Duration)       RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_subtract(a Duration, b Duration)  RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+```
+
+### Test count
+
+| Phase     | Tests  |
+| --------- | ------ |
+| 1–3       | 58     |
+| 4         | +36    |
+| **Total** | **94** |
+
+---
+
+## QA pass + btree sorting (complete)
+
+### QA fixes (no behavior change, 94 tests still passing)
+
+- Added `to_temporal(self)` / `from_temporal()` helpers to `Instant`, `PlainDateTime`, and `ZonedDateTime` to DRY up arithmetic functions
+- Simplified all arithmetic functions to use those helpers
+- Fixed swapped doc comments on `instant_since` / `instant_until`
+- Added `use std::cmp::Ordering;` to `instant/mod.rs` and `zoned_datetime/mod.rs`
+- Simplified `duration_sign` / `duration_is_zero` to operate directly on fields (no `to_temporal()` round-trip)
+- Removed unused `Sign` import from `duration/mod.rs`
+
+### btree operator classes
+
+`ORDER BY`, `DISTINCT`, `GROUP BY`, and B-tree indexes now work for `Instant`, `PlainDateTime`, and `ZonedDateTime`.
+
+**Implementation**: A `CREATE OPERATOR CLASS ... USING btree` block was merged into the existing `extension_sql!` operators block for each type, ensuring pgrx orders the SQL correctly without cross-block `requires` dependencies:
+
+```sql
+CREATE OPERATOR CLASS instant_btree_ops DEFAULT FOR TYPE Instant USING btree AS
+    OPERATOR 1  <,
+    OPERATOR 2  <=,
+    OPERATOR 3  =,
+    OPERATOR 4  >=,
+    OPERATOR 5  >,
+    FUNCTION 1  instant_compare(Instant, Instant);
+```
+
+`Duration` intentionally has no btree operator class — without a reference date, ISO 8601 durations have no total order (`P1M` vs `P30D` is context-dependent).
+
+**Key pgrx constraint**: `requires = [...]` in `extension_sql!` only accepts Rust symbol names (function identifiers), not the string `name = "..."` of other `extension_sql!` blocks. Merging the `CREATE OPERATOR CLASS` SQL into the same block as the `CREATE OPERATOR` statements avoids needing cross-block dependencies.
+
+### Test count
+
+| Phase      | Tests  |
+| ---------- | ------ |
+| 1–3        | 58     |
+| 4          | +36    |
+| QA + btree | +3     |
+| **Total**  | **97** |
