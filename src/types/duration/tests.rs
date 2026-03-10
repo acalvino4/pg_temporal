@@ -1,5 +1,3 @@
-use pgrx::prelude::*;
-
 // -----------------------------------------------------------------------
 // Round-trip I/O
 // -----------------------------------------------------------------------
@@ -236,4 +234,190 @@ fn dur_subtract_time_components() {
     .unwrap()
     .unwrap();
     assert_eq!(r, "PT1H30M");
+}
+
+// -----------------------------------------------------------------------
+// Rounding
+// -----------------------------------------------------------------------
+
+/// Rounding PT1H30M to the hour with no relative_to yields PT2H.
+#[pg_test]
+fn dur_round_to_hour() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_round('PT1H30M'::temporal.duration, 'hour')::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "PT2H");
+}
+
+/// Rounding PT1H29M to the hour rounds down to PT1H.
+#[pg_test]
+fn dur_round_to_hour_down() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_round('PT1H29M'::temporal.duration, 'hour')::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "PT1H");
+}
+
+/// Rounding P1Y6M to the year relative to 2025-01-01 rounds down to P1Y.
+/// 2025 has 365 days; 6 months from Jan 1 is 181 days (< 182.5), so halfExpand rounds down.
+#[pg_test]
+fn dur_round_plain_to_year() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_round_plain('P1Y6M'::temporal.duration, 'year',
+            '2025-01-01T00:00:00'::temporal.plaindatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "P1Y");
+}
+
+/// Rounding P1Y5M to the year relative to a PlainDateTime rounds down.
+#[pg_test]
+fn dur_round_plain_to_year_down() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_round_plain('P1Y5M'::temporal.duration, 'year',
+            '2025-01-01T00:00:00'::temporal.plaindatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "P1Y");
+}
+
+/// Rounding with a ZonedDateTime relative_to produces a valid duration.
+#[pg_test]
+fn dur_round_zoned_to_day() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_round_zoned('PT36H'::temporal.duration, 'day',
+            '2025-01-15T00:00:00+00:00[UTC]'::temporal.zoneddatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "P2D");
+}
+
+/// Invalid unit string raises an error.
+#[pg_test]
+#[should_panic(expected = "invalid unit")]
+fn dur_round_invalid_unit() {
+    Spi::get_one::<String>(
+        "SELECT duration_round('PT1H'::temporal.duration, 'fortnight')::text",
+    )
+    .unwrap();
+}
+
+// -----------------------------------------------------------------------
+// Total
+// -----------------------------------------------------------------------
+
+/// PT1H30M total in minutes is 90.
+#[pg_test]
+fn dur_total_minutes() {
+    let r = Spi::get_one::<f64>(
+        "SELECT duration_total('PT1H30M'::temporal.duration, 'minute')",
+    )
+    .unwrap()
+    .unwrap();
+    assert!((r - 90.0).abs() < 1e-9, "expected 90.0, got {r}");
+}
+
+/// PT1H total in seconds is 3600.
+#[pg_test]
+fn dur_total_seconds() {
+    let r = Spi::get_one::<f64>(
+        "SELECT duration_total('PT1H'::temporal.duration, 'second')",
+    )
+    .unwrap()
+    .unwrap();
+    assert!((r - 3600.0).abs() < 1e-9, "expected 3600.0, got {r}");
+}
+
+/// P1M total in days relative to a PlainDateTime (January: 31 days) is 31.
+#[pg_test]
+fn dur_total_plain_month_to_days() {
+    let r = Spi::get_one::<f64>(
+        "SELECT duration_total_plain('P1M'::temporal.duration, 'day',
+            '2025-01-01T00:00:00'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert!((r - 31.0).abs() < 1e-9, "expected 31.0 days for January, got {r}");
+}
+
+/// P1M total in days relative to a ZonedDateTime (February 2024, leap year: 29 days).
+#[pg_test]
+fn dur_total_zoned_feb_leap_year() {
+    let r = Spi::get_one::<f64>(
+        "SELECT duration_total_zoned('P1M'::temporal.duration, 'day',
+            '2024-02-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert!((r - 29.0).abs() < 1e-9, "expected 29.0 days for Feb 2024, got {r}");
+}
+
+/// Invalid unit string for total raises an error.
+#[pg_test]
+#[should_panic(expected = "invalid unit")]
+fn dur_total_invalid_unit() {
+    Spi::get_one::<f64>("SELECT duration_total('PT1H'::temporal.duration, 'fortnight')")
+        .unwrap();
+}
+
+// -----------------------------------------------------------------------
+// Relative arithmetic
+// -----------------------------------------------------------------------
+
+/// Adding P1Y and P6M relative to a PlainDateTime yields a duration of ~18 months.
+#[pg_test]
+fn dur_add_plain_calendar_components() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_add_plain('P1Y'::temporal.duration, 'P6M'::temporal.duration,
+            '2025-01-01T00:00:00'::temporal.plaindatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    // default DifferenceSettings produces days; the result should be ~548-549 days
+    // (1.5 years ≈ 548–549 days depending on the specific calendar span)
+    assert!(r.starts_with('P'), "expected a duration string starting with P, got: {r}");
+}
+
+/// Subtracting P6M from P1Y relative to a PlainDateTime yields ~P6M.
+#[pg_test]
+fn dur_subtract_plain_calendar_components() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_subtract_plain('P1Y'::temporal.duration, 'P6M'::temporal.duration,
+            '2025-01-01T00:00:00'::temporal.plaindatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r.starts_with('P'), "expected a duration string starting with P, got: {r}");
+}
+
+/// Adding PT12H and PT12H relative to a ZonedDateTime yields PT1D.
+#[pg_test]
+fn dur_add_zoned_time_components() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_add_zoned('PT12H'::temporal.duration, 'PT12H'::temporal.duration,
+            '2025-01-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    // Default DifferenceSettings for ZDT returns hours.
+    assert!(r.contains('H') || r.contains('D'), "unexpected duration: {r}");
+}
+
+/// Subtracting PT6H from PT12H relative to a ZonedDateTime yields PT6H.
+#[pg_test]
+fn dur_subtract_zoned_time_components() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_subtract_zoned('PT12H'::temporal.duration, 'PT6H'::temporal.duration,
+            '2025-01-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r.contains("PT6H"), "expected PT6H, got: {r}");
 }

@@ -40,7 +40,7 @@ Output always includes the UTC offset, IANA annotation, and (for non-ISO calenda
 
 ### `zoned_datetime_timezone(zdt zoneddatetime) → text`
 
-Returns the IANA timezone identifier stored with the value. Timezone aliases are resolved to canonical IANA names at insert time according to `pg_temporal.alias_policy`.
+Returns the IANA timezone identifier stored with the value. The identifier is stored as-is from the input string; alias resolution via `pg_temporal.alias_policy` is not yet active (see below).
 
 ```sql
 SELECT zoned_datetime_timezone(
@@ -92,6 +92,8 @@ SET pg_temporal.default_disambiguation = 'reject';
 
 ### `pg_temporal.alias_policy`
 
+> **Not yet active.** This GUC is registered and settable, but timezone identifiers are currently passed through to `temporal_rs` as-is regardless of this setting. Alias resolution will be implemented in a future release.
+
 Controls timezone alias resolution at insert time. Requires superuser (`ALTER SYSTEM` / `ALTER DATABASE`).
 
 | Value            | Behavior                        |
@@ -103,9 +105,120 @@ Controls timezone alias resolution at insert time. Requires superuser (`ALTER SY
 
 Two `ZonedDateTime` values are considered the same only when their **instant, timezone, and calendar** all match — consistent with [Temporal's identity equality semantics](https://tc39.es/proposal-temporal/#sec-temporal-zoneddatetime-equals). `2025-03-01T02:16:10+00:00[UTC]` and `2025-03-01T11:16:10+09:00[Asia/Tokyo]` represent the same instant but are **not equal** because their zones differ.
 
-## Planned
+## Comparison operators
 
-- Comparison operators (`<`, `<=`, `=`, `>=`, `>`)
-- Arithmetic functions (`add`, `subtract`, `until`, `since`)
-- Constructor functions
-- Cast from/to `timestamptz` (explicit casts only)
+All six comparison operators (`<`, `<=`, `=`, `<>`, `>=`, `>`) are supported and backed by a B-tree operator class, enabling `ORDER BY`, `GROUP BY`, `DISTINCT`, and B-tree indexes.
+
+**Identity equality**: `=` tests whether instant, timezone, _and_ calendar all match—not just whether two values represent the same moment. `2025-03-01T02:16:10+00:00[UTC]` and `2025-03-01T11:16:10+09:00[Asia/Tokyo]` are the same instant but `=` returns false because their zones differ.
+
+```sql
+SELECT '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+       = '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime;  -- true
+
+SELECT '2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime
+       = '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime;  -- false
+
+-- ORDER BY sorts chronologically (by epoch nanoseconds)
+SELECT * FROM events ORDER BY ts;
+```
+
+### `zoned_datetime_compare(a zoneddatetime, b zoneddatetime) → integer`
+
+Returns -1, 0, or 1.
+
+## Arithmetic
+
+### `zoned_datetime_add(zdt zoneddatetime, dur duration) → zoneddatetime`
+
+Adds a duration using DST-aware wall-clock arithmetic. Day-of-month overflow is clamped (`Constrain`): e.g. Jan 31 + P1M → Feb 28/29.
+
+```sql
+SELECT zoned_datetime_add(
+  '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+  'PT1H'::temporal.duration
+)::text;  -- 2025-03-01T01:00:00+00:00[UTC]
+```
+
+### `zoned_datetime_subtract(zdt zoneddatetime, dur duration) → zoneddatetime`
+
+Subtracts a duration using DST-aware wall-clock arithmetic.
+
+```sql
+SELECT zoned_datetime_subtract(
+  '2025-03-01T01:00:00+00:00[UTC]'::temporal.zoneddatetime,
+  'PT1H'::temporal.duration
+)::text;  -- 2025-03-01T00:00:00+00:00[UTC]
+```
+
+### `zoned_datetime_until(zdt zoneddatetime, other zoneddatetime) → duration`
+
+Returns the duration from `zdt` to `other`. The default largest unit is hours.
+
+```sql
+SELECT zoned_datetime_until(
+  '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+  '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime
+)::text;  -- PT2H
+```
+
+### `zoned_datetime_since(zdt zoneddatetime, other zoneddatetime) → duration`
+
+Returns the duration elapsed from `other` to `zdt`. The default largest unit is hours.
+
+```sql
+SELECT zoned_datetime_since(
+  '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime,
+  '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+)::text;  -- PT2H
+```
+
+## Multi-calendar support
+
+All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The instant is always stored as epoch nanoseconds; the calendar name is stored in the catalog alongside the timezone. `zoned_datetime_calendar` returns the stored calendar name; non-ISO annotations are preserved on output.
+
+```sql
+-- Japanese calendar annotation round-trips
+SELECT '2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]'::temporal.zoneddatetime::text;
+-- 2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]
+
+-- The calendar accessor returns the stored name
+SELECT zoned_datetime_calendar(
+  '2025-03-01T00:00:00+00:00[UTC][u-ca=persian]'::temporal.zoneddatetime
+);
+-- persian
+
+-- Same instant, different calendars → not equal (identity equality)
+SELECT '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+     = '2025-03-01T00:00:00+00:00[UTC][u-ca=japanese]'::temporal.zoneddatetime;  -- false
+```
+
+The ISO 8601 calendar annotation (`[u-ca=iso8601]`) is accepted on input but suppressed on output.
+
+## Constructors
+
+### `make_zoneddatetime(epoch_ns text, tz text, cal text) → zoneddatetime`
+
+Constructs a `ZonedDateTime` from a Unix epoch in nanoseconds (as `text`), an IANA timezone identifier, and a calendar identifier. The epoch is supplied as `text` because there is no native 128-bit integer SQL type.
+
+```sql
+SELECT make_zoneddatetime('1609459200000000000', 'UTC', 'iso8601')::text;
+-- 2021-01-01T00:00:00+00:00[UTC]
+
+SELECT make_zoneddatetime('0', 'America/New_York', 'iso8601')::text;
+-- 1969-12-31T19:00:00-05:00[America/New_York]
+```
+
+## Now functions
+
+### `temporal_now_zoneddatetime(tz text) → zoneddatetime`
+
+Returns the current `ZonedDateTime` at transaction start time in the given IANA timezone with an ISO 8601 calendar. Backed by PostgreSQL's `GetCurrentTimestamp()`, which is frozen at the start of the current transaction (repeatable-read semantics).
+
+```sql
+SELECT temporal_now_zoneddatetime('America/New_York');
+SELECT temporal_now_zoneddatetime('Asia/Tokyo');
+```
+
+## Limitations / planned
+
+- Cast from/to `timestamptz` (explicit casts only) — not yet implemented

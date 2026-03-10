@@ -1,4 +1,4 @@
-pub(crate) mod catalog;
+pub mod catalog;
 pub mod duration;
 pub mod instant;
 pub mod plain_datetime;

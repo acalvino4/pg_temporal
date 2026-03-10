@@ -1,5 +1,3 @@
-use pgrx::prelude::*;
-
 // -----------------------------------------------------------------------
 // Round-trip I/O
 // -----------------------------------------------------------------------
@@ -126,35 +124,6 @@ fn epoch_ns_known_value() {
     .unwrap()
     .unwrap();
     assert_eq!(ns, "1740787200000000000");
-}
-
-// -----------------------------------------------------------------------
-// Catalog idempotency
-// -----------------------------------------------------------------------
-
-/// Casting the same timezone multiple times must not create duplicate rows
-/// in the timezone catalog.
-#[pg_test]
-fn catalog_timezone_upsert_is_idempotent() {
-    Spi::run("SELECT '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime").unwrap();
-    Spi::run("SELECT '2026-01-01T00:00:00+09:00[Asia/Tokyo]'::temporal.zoneddatetime").unwrap();
-    let count = Spi::get_one::<i64>(
-        "SELECT count(*)::bigint FROM temporal.timezone_catalog WHERE canonical_id = 'Asia/Tokyo'",
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(count, 1, "duplicate timezone catalog rows created");
-}
-
-/// iso8601 calendar is seeded exactly once during extension install.
-#[pg_test]
-fn catalog_iso8601_seeded_exactly_once() {
-    let count = Spi::get_one::<i64>(
-        "SELECT count(*)::bigint FROM temporal.calendar_catalog WHERE calendar_id = 'iso8601'",
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(count, 1, "iso8601 calendar must be seeded exactly once");
 }
 
 // -----------------------------------------------------------------------
@@ -363,4 +332,128 @@ fn since_two_hours() {
     .unwrap()
     .unwrap();
     assert_eq!(r, "PT2H");
+}
+
+// -----------------------------------------------------------------------
+// Multi-calendar support
+// -----------------------------------------------------------------------
+
+/// A ZonedDateTime with a Japanese calendar annotation round-trips with the
+/// calendar annotation present in the output.
+#[pg_test]
+fn roundtrip_japanese_calendar() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]'::temporal.zoneddatetime::text",
+    )
+    .unwrap()
+    .unwrap();
+    // ISO date part must survive unmodified; calendar annotation must be present.
+    assert!(result.contains("2025-03-01T11:16:10"), "ISO date lost: {result}");
+    assert!(result.contains("[Asia/Tokyo]"), "timezone lost: {result}");
+    assert!(result.contains("[u-ca=japanese]"), "calendar annotation missing: {result}");
+}
+
+/// A ZonedDateTime with a Persian calendar annotation round-trips correctly.
+#[pg_test]
+fn roundtrip_persian_calendar() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01T00:00:00+00:00[UTC][u-ca=persian]'::temporal.zoneddatetime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(result.contains("2025-03-01"), "ISO date lost: {result}");
+    assert!(result.contains("[u-ca=persian]"), "calendar annotation missing: {result}");
+}
+
+/// The calendar accessor returns the correct non-ISO calendar name.
+#[pg_test]
+fn multi_calendar_accessor_returns_correct_name() {
+    let cal = Spi::get_one::<String>(
+        "SELECT zoned_datetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]'::temporal.zoneddatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "japanese");
+}
+
+/// Two same-instant ZonedDateTimes with different calendars must not be equal.
+#[pg_test]
+fn multi_calendar_different_calendar_not_equal() {
+    let eq = Spi::get_one::<bool>(
+        "SELECT '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
+              = '2025-03-01T00:00:00+00:00[UTC][u-ca=japanese]'::temporal.zoneddatetime",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(!eq, "same instant but different calendars should not be equal");
+}
+
+// -----------------------------------------------------------------------
+// Constructor: make_zoneddatetime
+// -----------------------------------------------------------------------
+
+/// Basic construction: the epoch_ns of make_zoneddatetime equals the stored value.
+#[pg_test]
+fn zdt_make_basic_epoch_roundtrip() {
+    let ns = Spi::get_one::<String>(
+        "SELECT zoned_datetime_epoch_ns(make_zoneddatetime('1609459200000000000', 'UTC', 'iso8601'))",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "1609459200000000000");
+}
+
+/// The timezone is stored and retrievable.
+#[pg_test]
+fn zdt_make_timezone_stored() {
+    let tz = Spi::get_one::<String>(
+        "SELECT zoned_datetime_timezone(make_zoneddatetime('0', 'America/New_York', 'iso8601'))",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(tz, "America/New_York");
+}
+
+/// The calendar is stored and retrievable.
+#[pg_test]
+fn zdt_make_calendar_stored() {
+    let cal = Spi::get_one::<String>(
+        "SELECT zoned_datetime_calendar(make_zoneddatetime('0', 'UTC', 'iso8601'))",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "iso8601");
+}
+
+/// A ZodedDateTime constructed with make_zoneddatetime round-trips through text I/O.
+#[pg_test]
+fn zdt_make_roundtrips_through_text() {
+    // 2021-01-01T00:00:00Z in nanoseconds since Unix epoch
+    let text = Spi::get_one::<String>(
+        "SELECT make_zoneddatetime('1609459200000000000', 'UTC', 'iso8601')::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(text.contains("2021-01-01"), "expected 2021-01-01 in output, got: {text}");
+    assert!(text.contains("[UTC]"), "expected [UTC] in output, got: {text}");
+}
+
+/// make_zoneddatetime with an invalid timezone raises an error.
+#[pg_test]
+#[should_panic(expected = "invalid timezone")]
+fn zdt_make_invalid_timezone_errors() {
+    Spi::get_one::<String>(
+        "SELECT make_zoneddatetime('0', 'Not/ATimezone', 'iso8601')::text",
+    )
+    .unwrap();
+}
+
+/// make_zoneddatetime with a non-integer epoch_ns raises an error.
+#[pg_test]
+#[should_panic(expected = "expected an integer")]
+fn zdt_make_invalid_epoch_ns_errors() {
+    Spi::get_one::<String>(
+        "SELECT make_zoneddatetime('not_a_number', 'UTC', 'iso8601')::text",
+    )
+    .unwrap();
 }

@@ -1,3 +1,10 @@
+// pgrx requires all custom PostgresType parameters in #[pg_extern] functions to be
+// passed by value — references are not supported (`BorrowDatum`/`ArgAbi` are not
+// implemented for user-defined types). The needless_pass_by_value lint correctly
+// identifies that many of these functions don't need ownership, but they must
+// take by value due to this pgrx constraint.
+#![allow(clippy::needless_pass_by_value)]
+
 use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -12,10 +19,6 @@ use temporal_rs::{
 
 use crate::gucs;
 use crate::provider::TZ_PROVIDER;
-use crate::types::catalog::{
-    lookup_calendar_by_oid, lookup_or_insert_calendar, lookup_or_insert_timezone,
-    lookup_timezone_by_oid,
-};
 use crate::types::duration::Duration;
 
 // ---------------------------------------------------------------------------
@@ -28,16 +31,16 @@ use crate::types::duration::Duration;
 //   instant_ns    – nanoseconds since Unix epoch (same as Temporal's
 //                   epochNanoseconds). i128 gives us the full ±292-year
 //                   range at nanosecond precision.
-//   tz_oid        – row id in temporal.timezone_catalog
-//   calendar_oid  – row id in temporal.calendar_catalog
+//   tz_id         – IANA timezone identifier string (e.g. "America/New_York")
+//   calendar_id   – calendar identifier string (e.g. "iso8601")
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PostgresType)]
+#[derive(Debug, Clone, Serialize, Deserialize, PostgresType)]
 #[inoutfuncs]
 pub struct ZonedDateTime {
     instant_ns: i128,
-    tz_oid: i32,
-    calendar_oid: i32,
+    tz_id: String,
+    calendar_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +51,6 @@ impl InOutFuncs for ZonedDateTime {
     /// Parse an IXDTF/RFC-9557 string into a `ZonedDateTime` datum.
     ///
     /// Example input: `2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=iso8601]`
-    #[allow(clippy::similar_names)] // tz_id (string) and tz_oid (integer) are semantically distinct
     fn input(input: &CStr) -> Self {
         let s =
             input.to_str().unwrap_or_else(|_| error!("zoned_datetime input is not valid UTF-8"));
@@ -68,37 +70,61 @@ impl InOutFuncs for ZonedDateTime {
 
         let cal_id = zdt.calendar().identifier();
 
-        let tz_oid = lookup_or_insert_timezone(&tz_id);
-        let calendar_oid = lookup_or_insert_calendar(cal_id);
-
-        Self { instant_ns, tz_oid, calendar_oid }
+        Self { instant_ns, tz_id, calendar_id: cal_id.to_string() }
     }
 
     /// Serialize a `ZonedDateTime` datum back to an IXDTF string.
     fn output(&self, buffer: &mut pgrx::StringInfo) {
-        let tz_id = lookup_timezone_by_oid(self.tz_oid);
-        // calendar_oid is stored but not yet used for formatting; ISO is the only
-        // supported calendar in Phase 2. Extend here when multi-calendar lands.
+        let tz = TimeZone::try_from_str_with_provider(&self.tz_id, &*TZ_PROVIDER)
+            .unwrap_or_else(|e| error!("failed to load timezone \"{}\": {e}", self.tz_id));
 
-        let tz = TimeZone::try_from_str(&tz_id)
-            .unwrap_or_else(|e| error!("failed to load timezone \"{tz_id}\": {e}"));
+        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
 
-        let cal = Calendar::default(); // iso8601
-
-        let zdt = TemporalZdt::try_new(self.instant_ns, tz, cal)
+        let zdt = TemporalZdt::try_new_with_provider(self.instant_ns, tz, cal, &*TZ_PROVIDER)
             .unwrap_or_else(|e| error!("failed to reconstruct zoned_datetime: {e}"));
 
         let s = zdt
-            .to_ixdtf_string(
+            .to_ixdtf_string_with_provider(
                 DisplayOffset::default(),
                 DisplayTimeZone::default(),
                 DisplayCalendar::default(),
                 ToStringRoundingOptions::default(),
+                &*TZ_PROVIDER,
             )
             .unwrap_or_else(|e| error!("failed to format zoned_datetime: {e}"));
 
         buffer.push_str(&s);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Constructor functions exposed to SQL
+// ---------------------------------------------------------------------------
+
+/// Construct a `ZonedDateTime` from a nanosecond epoch, an IANA timezone
+/// identifier, and a calendar identifier.
+///
+/// `epoch_ns` is supplied as `text` because i128 has no native SQL type.
+///
+/// Example:
+/// ```sql
+/// SELECT make_zoneddatetime('1609459200000000000', 'America/New_York', 'iso8601');
+/// ```
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn make_zoneddatetime(epoch_ns: &str, tz: &str, cal: &str) -> ZonedDateTime {
+    let ns: i128 = epoch_ns.trim().parse().unwrap_or_else(|_| {
+        error!("make_zoneddatetime: invalid epoch_ns \"{epoch_ns}\": expected an integer")
+    });
+    let timezone = TimeZone::try_from_str_with_provider(tz, &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("make_zoneddatetime: invalid timezone \"{tz}\": {e}"));
+    let calendar = Calendar::try_from_utf8(cal.as_bytes())
+        .unwrap_or_else(|e| error!("make_zoneddatetime: invalid calendar \"{cal}\": {e}"));
+    let tz_id = timezone
+        .identifier()
+        .unwrap_or_else(|e| error!("make_zoneddatetime: failed to get timezone identifier: {e}"));
+    ZonedDateTime { instant_ns: ns, tz_id, calendar_id: calendar.identifier().to_string() }
 }
 
 // ---------------------------------------------------------------------------
@@ -109,14 +135,14 @@ impl InOutFuncs for ZonedDateTime {
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_timezone(zdt: ZonedDateTime) -> String {
-    lookup_timezone_by_oid(zdt.tz_oid)
+    zdt.tz_id
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_calendar(zdt: ZonedDateTime) -> String {
-    lookup_calendar_by_oid(zdt.calendar_oid)
+    zdt.calendar_id
 }
 
 /// Returns the UTC epoch in nanoseconds as a text value (i128 has no native
@@ -133,22 +159,20 @@ pub fn zoned_datetime_epoch_ns(zdt: ZonedDateTime) -> String {
 
 impl ZonedDateTime {
     /// Reconstruct the `temporal_rs` representation from stored fields.
-    // Clippy's wrong_self_convention wants `to_*` on Copy types to take self by value.
-    pub(crate) fn to_temporal(self) -> TemporalZdt {
-        let tz_id = lookup_timezone_by_oid(self.tz_oid);
+    pub(crate) fn to_temporal(&self) -> TemporalZdt {
         // Use our TZ_PROVIDER so the ResolvedId inside the TimeZone comes from the
         // same provider we pass to add_with_provider / subtract_with_provider etc.
         // Using the internal temporal_rs provider here would cause a ResolvedId
         // mismatch and a "Time zone identifier does not exist" error at runtime.
-        let tz = TimeZone::try_from_str_with_provider(&tz_id, &*TZ_PROVIDER)
-            .unwrap_or_else(|e| error!("failed to load timezone \"{tz_id}\": {e}"));
-        let cal = Calendar::default();
-        TemporalZdt::try_new(self.instant_ns, tz, cal)
+        let tz = TimeZone::try_from_str_with_provider(&self.tz_id, &*TZ_PROVIDER)
+            .unwrap_or_else(|e| error!("failed to load timezone \"{}\": {e}", self.tz_id));
+        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
+        TemporalZdt::try_new_with_provider(self.instant_ns, tz, cal, &*TZ_PROVIDER)
             .unwrap_or_else(|e| error!("failed to reconstruct zoned_datetime: {e}"))
     }
 
     /// Build a `ZonedDateTime` from a `temporal_rs` zoned datetime.
-    #[allow(clippy::similar_names)] // tz_id (string) and tz_oid (integer) are semantically distinct
     pub(crate) fn from_temporal(zdt: &TemporalZdt) -> Self {
         let instant_ns = zdt.epoch_nanoseconds().as_i128();
         let tz_id = zdt
@@ -156,9 +180,7 @@ impl ZonedDateTime {
             .identifier()
             .unwrap_or_else(|e| error!("failed to get timezone identifier: {e}"));
         let cal_id = zdt.calendar().identifier();
-        let tz_oid = lookup_or_insert_timezone(&tz_id);
-        let calendar_oid = lookup_or_insert_calendar(cal_id);
-        Self { instant_ns, tz_oid, calendar_oid }
+        Self { instant_ns, tz_id, calendar_id: cal_id.to_string() }
     }
 }
 
@@ -167,65 +189,65 @@ impl ZonedDateTime {
 // ---------------------------------------------------------------------------
 
 /// Returns -1, 0, or 1 comparing two zoned datetimes.
-/// Primary key: epoch nanoseconds; tiebreakers: timezone OID, calendar OID.
+/// Primary key: epoch nanoseconds; tiebreakers: timezone identifier (lexicographic),
+/// calendar identifier (lexicographic).
 /// Two values are equal only when instant, timezone, and calendar all match
 /// (Temporal identity equality).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
+///
+/// Note: `Temporal.ZonedDateTime.compare()` returns 0 for same-instant different-zone
+/// values, but PostgreSQL btree requires `compare = 0 ↔ equals`, so identity semantics
+/// are used throughout. Same-instant different-zone ordering is unspecified by the
+/// Temporal spec; lexicographic identifier ordering is a valid choice within that ambiguity.
+#[allow(clippy::doc_markdown)] // "PostgreSQL" is a proper noun, not a code identifier
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_compare(a: ZonedDateTime, b: ZonedDateTime) -> i32 {
-    let a_key = (a.instant_ns, a.tz_oid, a.calendar_oid);
-    let b_key = (b.instant_ns, b.tz_oid, b.calendar_oid);
-    match a_key.cmp(&b_key) {
+    // Primary sort: epoch nanoseconds (absolute temporal order).
+    // Tiebreakers: timezone identifier then calendar identifier, both lexicographic.
+    // This is stable across databases and spec-conformant (the Temporal spec leaves
+    // same-instant different-zone ordering unspecified).
+    match a
+        .instant_ns
+        .cmp(&b.instant_ns)
+        .then_with(|| a.tz_id.cmp(&b.tz_id))
+        .then_with(|| a.calendar_id.cmp(&b.calendar_id))
+    {
         Ordering::Less => -1,
         Ordering::Equal => 0,
         Ordering::Greater => 1,
     }
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_lt(a: ZonedDateTime, b: ZonedDateTime) -> bool {
     zoned_datetime_compare(a, b) < 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_le(a: ZonedDateTime, b: ZonedDateTime) -> bool {
     zoned_datetime_compare(a, b) <= 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_eq(a: ZonedDateTime, b: ZonedDateTime) -> bool {
     zoned_datetime_compare(a, b) == 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_ne(a: ZonedDateTime, b: ZonedDateTime) -> bool {
     zoned_datetime_compare(a, b) != 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_ge(a: ZonedDateTime, b: ZonedDateTime) -> bool {
     zoned_datetime_compare(a, b) >= 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_gt(a: ZonedDateTime, b: ZonedDateTime) -> bool {

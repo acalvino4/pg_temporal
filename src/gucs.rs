@@ -16,6 +16,10 @@ pub static DEFAULT_DISAMBIGUATION: GucSetting<Option<CString>> =
 
 /// Cluster-wide timezone alias policy.
 /// Valid values: iana (default), jodatime.
+///
+/// NOTE: This GUC is registered and settable but not yet acted upon — timezone
+/// identifiers are passed through to `temporal_rs` as-is regardless of this
+/// setting. Alias resolution will be implemented in a future phase.
 pub static ALIAS_POLICY: GucSetting<Option<CString>> =
     GucSetting::<Option<CString>>::new(Some(c"iana"));
 
@@ -51,9 +55,15 @@ pub fn register() {
 pub fn default_disambiguation() -> Disambiguation {
     let val = DEFAULT_DISAMBIGUATION.get();
     match val.as_deref().and_then(|c| c.to_str().ok()) {
+        Some("compatible") | None => Disambiguation::Compatible,
         Some("earlier") => Disambiguation::Earlier,
         Some("later") => Disambiguation::Later,
         Some("reject") => Disambiguation::Reject,
-        _ => Disambiguation::Compatible,
+        Some(other) => {
+            pgrx::warning!(
+                "pg_temporal.default_disambiguation: unrecognized value \"{other}\", falling back to 'compatible'"
+            );
+            Disambiguation::Compatible
+        }
     }
 }

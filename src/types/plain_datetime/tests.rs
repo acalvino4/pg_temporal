@@ -1,5 +1,3 @@
-use pgrx::prelude::*;
-
 // -----------------------------------------------------------------------
 // Round-trip I/O
 // -----------------------------------------------------------------------
@@ -163,24 +161,6 @@ fn pdt_accessor_calendar_defaults_to_iso8601() {
 }
 
 // -----------------------------------------------------------------------
-// Catalog idempotency
-// -----------------------------------------------------------------------
-
-/// Casting the same calendar string multiple times must not create
-/// duplicate rows in the calendar catalog.
-#[pg_test]
-fn pdt_catalog_calendar_upsert_is_idempotent() {
-    Spi::run("SELECT '2025-03-01T11:16:10'::temporal.plaindatetime").unwrap();
-    Spi::run("SELECT '2026-01-01T00:00:00'::temporal.plaindatetime").unwrap();
-    let count = Spi::get_one::<i64>(
-        "SELECT count(*)::bigint FROM temporal.calendar_catalog WHERE calendar_id = 'iso8601'",
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(count, 1, "duplicate calendar catalog rows created");
-}
-
-// -----------------------------------------------------------------------
 // Invalid input rejection
 // -----------------------------------------------------------------------
 
@@ -323,4 +303,143 @@ fn pdt_since_one_day() {
     .unwrap()
     .unwrap();
     assert_eq!(r, "P1D");
+}
+
+// -----------------------------------------------------------------------
+// Multi-calendar support
+// -----------------------------------------------------------------------
+
+/// A PlainDateTime with a Japanese calendar annotation round-trips with the
+/// calendar annotation present in the output.
+#[pg_test]
+fn pdt_roundtrip_japanese_calendar() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01T11:16:10[u-ca=japanese]'::temporal.plaindatetime::text",
+    )
+    .unwrap()
+    .unwrap();
+    // ISO date part must survive unmodified; calendar annotation must be present.
+    assert!(result.contains("2025-03-01T11:16:10"), "ISO datetime lost: {result}");
+    assert!(result.contains("[u-ca=japanese]"), "calendar annotation missing: {result}");
+}
+
+/// A PlainDateTime with a Persian calendar annotation round-trips correctly.
+#[pg_test]
+fn pdt_roundtrip_persian_calendar() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(result.contains("2025-03-01"), "ISO date lost: {result}");
+    assert!(result.contains("[u-ca=persian]"), "calendar annotation missing: {result}");
+}
+
+/// The calendar accessor returns the correct non-ISO calendar name.
+#[pg_test]
+fn pdt_multi_calendar_accessor_returns_correct_name() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plain_datetime_calendar('2025-03-01T11:16:10[u-ca=japanese]'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "japanese");
+}
+
+/// For the Persian calendar, the year accessor returns the Persian Solar Hijri
+/// year, which differs significantly from the ISO year.
+/// 2025-03-01 ISO falls in Persian year 1403 (before Nowruz on ~March 20).
+#[pg_test]
+fn pdt_year_accessor_returns_calendar_year_for_persian() {
+    let year = Spi::get_one::<i32>(
+        "SELECT plain_datetime_year('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    // Persian year for 2025-03-01 is 1403, well below 2000.
+    assert!(year < 2000, "expected Persian extended year (~1403), got {year}");
+    assert!(year > 1000, "expected Persian extended year (~1403), got {year}");
+}
+
+/// ISO year/month/day accessors are unaffected by calendar on the stored ISO fields;
+/// for the ISO calendar specifically, year/month/day match.
+#[pg_test]
+fn pdt_iso_calendar_year_month_day_match() {
+    let year = Spi::get_one::<i32>(
+        "SELECT plain_datetime_year('2025-03-01T00:00:00'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    let month = Spi::get_one::<i32>(
+        "SELECT plain_datetime_month('2025-03-01T00:00:00'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    let day = Spi::get_one::<i32>(
+        "SELECT plain_datetime_day('2025-03-01T00:00:00'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(year, 2025);
+    assert_eq!(month, 3);
+    assert_eq!(day, 1);
+}
+
+// -----------------------------------------------------------------------
+// Constructor: make_plaindatetime
+// -----------------------------------------------------------------------
+
+/// Basic construction and round-trip through text output.
+#[pg_test]
+fn pdt_make_basic_roundtrip() {
+    let r = Spi::get_one::<String>(
+        "SELECT make_plaindatetime(2025, 6, 15, 12, 30, 45)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-06-15T12:30:45");
+}
+
+/// Constructor with all sub-second fields.
+#[pg_test]
+fn pdt_make_with_sub_second() {
+    let r = Spi::get_one::<String>(
+        "SELECT make_plaindatetime(2025, 6, 15, 12, 30, 45, 123, 456, 789)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r.contains("12:30:45.123456789"), "got: {r}");
+}
+
+/// Constructor with default sub-second fields (all zero).
+#[pg_test]
+fn pdt_make_defaults_match_explicit_zero() {
+    let with_defaults = Spi::get_one::<String>(
+        "SELECT make_plaindatetime(2025, 1, 1, 0, 0, 0)::text",
+    )
+    .unwrap()
+    .unwrap();
+    let with_explicit =
+        Spi::get_one::<String>("SELECT make_plaindatetime(2025, 1, 1, 0, 0, 0, 0, 0, 0)::text")
+            .unwrap()
+            .unwrap();
+    assert_eq!(with_defaults, with_explicit);
+}
+
+/// Constructor stores the calendar correctly.
+#[pg_test]
+fn pdt_make_calendar_stored() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plain_datetime_calendar(make_plaindatetime(2025, 6, 15, 0, 0, 0, 0, 0, 0, 'iso8601'))",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "iso8601");
+}
+
+/// Constructor with an invalid date raises an error.
+#[pg_test]
+#[should_panic(expected = "make_plaindatetime")]
+fn pdt_make_invalid_date_errors() {
+    Spi::get_one::<String>("SELECT make_plaindatetime(2025, 2, 30, 0, 0, 0)::text").unwrap();
 }

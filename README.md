@@ -2,8 +2,7 @@
 
 A PostgreSQL extension implementing [Temporal](https://tc39.es/proposal-temporal/)-compliant date/time types — nanosecond precision, IANA timezone semantics, full DST disambiguation, and calendar awareness.
 
-> [!NOTE]
-> This project was almost entirely vibe-coded - I have no prior experience writing database extensions or programming in Rust; expect bugs and non-idiomatic patterns. It is not intended to become a production-grade implmentation — people more familiar with Rust and databases should take that on. Take this as just a POC meant to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem.
+> **Note:** This project was almost entirely vibe-coded - I have no prior experience writing database extensions or programming in Rust; expect bugs and non-idiomatic patterns. It is not intended to become a production-grade implmentation — people more familiar with Rust and databases should take that on. Take this as just a POC meant to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem.
 
 ## Why
 
@@ -34,12 +33,17 @@ Sure, db's have timestamp types, and generally handle UTC offsets as well, but t
 
 ## Status
 
-| Phase                                   | Status   |
-| --------------------------------------- | -------- |
-| Scaffold + environment                  | complete |
-| Catalog tables + `zoned_datetime`       | complete |
-| `instant`, `plain_datetime`, `duration` | complete |
-| Arithmetic + comparison operators       | planned  |
+| Phase                                     | Status   |
+| ----------------------------------------- | -------- |
+| Scaffold + environment                    | complete |
+| Catalog tables + `zoned_datetime`         | complete |
+| `instant`, `plain_datetime`, `duration`   | complete |
+| Multi-calendar support                    | complete |
+| Constructor functions                     | complete |
+| `now()` functions                         | complete |
+| `duration_round` / `duration_total`       | complete |
+| `duration_add/subtract` with `relativeTo` | complete |
+| Arithmetic + comparison operators         | complete |
 
 ## Implementation
 
@@ -47,6 +51,7 @@ Built with [pgrx](https://github.com/pgcentralfoundation/pgrx) (Rust ↔ Postgre
 
 ## Docs
 
+- [Quickstart](docs/quickstart.md)
 - [Contributing / development guide](docs/contributing.md)
 - [ZonedDateTime](docs/usage/zoned_datetime.md)
 - [Instant](docs/usage/instant.md)

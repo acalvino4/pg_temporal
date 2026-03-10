@@ -58,6 +58,24 @@ impl InOutFuncs for Instant {
 }
 
 // ---------------------------------------------------------------------------
+// Constructor functions exposed to SQL
+// ---------------------------------------------------------------------------
+
+/// Construct an `Instant` from nanoseconds since the Unix epoch, supplied
+/// as `text` (because i128 has no native SQL counterpart).
+///
+/// Example: `SELECT make_instant('1609459200000000000');`
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn make_instant(epoch_ns: &str) -> Instant {
+    let ns: i128 = epoch_ns.trim().parse().unwrap_or_else(|_| {
+        error!("make_instant: invalid epoch_ns \"{epoch_ns}\": expected an integer")
+    });
+    let inst = TemporalInstant::try_new(ns).unwrap_or_else(|e| error!("make_instant: {e}"));
+    Instant::from_temporal(&inst)
+}
+
+// ---------------------------------------------------------------------------
 // Accessor functions exposed to SQL
 // ---------------------------------------------------------------------------
 

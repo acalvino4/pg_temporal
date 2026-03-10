@@ -37,7 +37,7 @@ Input accepts an ISO 8601 date/time string without a UTC offset or timezone anno
 
 UTC offsets are not accepted — use `temporal.instant` or `temporal.zoneddatetime` for values that have a timezone.
 
-Output omits the calendar annotation for `iso8601` (the only supported calendar in the current release).
+Output omits the calendar annotation for `iso8601`. Non-ISO calendar annotations (e.g. `[u-ca=japanese]`) are preserved on output — see [Multi-calendar support](#multi-calendar-support) below.
 
 ## SQL functions
 
@@ -90,9 +90,116 @@ SELECT plain_datetime_calendar('2025-03-01T14:30:00'::temporal.plaindatetime);
 -- iso8601
 ```
 
-## Planned
+## Comparison operators
 
-- Comparison operators (`<`, `<=`, `=`, `>=`, `>`)
-- Arithmetic functions (`add`, `subtract`, `until`, `since`)
-- Constructor functions
-- Multi-calendar support (non-ISO calendars)
+All six comparison operators (`<`, `<=`, `=`, `<>`, `>=`, `>`) are supported and backed by a B-tree operator class, enabling `ORDER BY`, `GROUP BY`, `DISTINCT`, and B-tree indexes. Two `PlainDateTime` values are equal when all date/time fields and the calendar identifier match.
+
+```sql
+SELECT '2025-03-01T12:00:00'::temporal.plaindatetime
+       < '2025-03-02T12:00:00'::temporal.plaindatetime;  -- true
+
+-- ORDER BY sorts chronologically
+SELECT * FROM meetings ORDER BY dt;
+```
+
+### `plain_datetime_compare(a plaindatetime, b plaindatetime) → integer`
+
+Returns -1, 0, or 1.
+
+## Arithmetic
+
+### `plain_datetime_add(pdt plaindatetime, dur duration) → plaindatetime`
+
+Adds a duration to a plain datetime. Day-of-month overflow is clamped (`Constrain`): e.g. Jan 31 + P1M → Feb 28/29.
+
+```sql
+SELECT plain_datetime_add(
+  '2025-03-01T12:00:00'::temporal.plaindatetime,
+  'P1D'::temporal.duration
+)::text;  -- 2025-03-02T12:00:00
+```
+
+### `plain_datetime_subtract(pdt plaindatetime, dur duration) → plaindatetime`
+
+Subtracts a duration from a plain datetime with the same overflow behavior.
+
+```sql
+SELECT plain_datetime_subtract(
+  '2025-03-02T12:00:00'::temporal.plaindatetime,
+  'P1D'::temporal.duration
+)::text;  -- 2025-03-01T12:00:00
+```
+
+### `plain_datetime_until(pdt plaindatetime, other plaindatetime) → duration`
+
+Returns the duration from `pdt` to `other`. The default largest unit is days.
+
+```sql
+SELECT plain_datetime_until(
+  '2025-03-01T00:00:00'::temporal.plaindatetime,
+  '2025-03-02T00:00:00'::temporal.plaindatetime
+)::text;  -- P1D
+```
+
+### `plain_datetime_since(pdt plaindatetime, other plaindatetime) → duration`
+
+Returns the duration elapsed from `other` to `pdt`. The default largest unit is days.
+
+```sql
+SELECT plain_datetime_since(
+  '2025-03-02T00:00:00'::temporal.plaindatetime,
+  '2025-03-01T00:00:00'::temporal.plaindatetime
+)::text;  -- P1D
+```
+
+## Constructors
+
+### `make_plaindatetime(year int, month int, day int, hour int, minute int, second int [, millisecond int, microsecond int, nanosecond int, cal text]) → plaindatetime`
+
+Constructs a `PlainDateTime` from individual field values. `millisecond`, `microsecond`, `nanosecond`, and `cal` are optional and default to `0`, `0`, `0`, and `'iso8601'` respectively.
+
+```sql
+SELECT make_plaindatetime(2025, 6, 15, 12, 30, 0)::text;
+-- 2025-06-15T12:30:00
+
+SELECT make_plaindatetime(2025, 6, 15, 12, 30, 0, 123, 456, 789)::text;
+-- 2025-06-15T12:30:00.123456789
+
+-- Invalid dates are rejected at construction time
+SELECT make_plaindatetime(2025, 2, 30, 0, 0, 0);  -- error
+```
+
+## Multi-calendar support
+
+All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The date/time fields are always stored internally as ISO 8601; accessor functions (`plain_datetime_year`, `plain_datetime_month`, `plain_datetime_day`) return calendar-specific values when a non-ISO calendar is used.
+
+```sql
+-- Japanese calendar annotation is preserved on output
+SELECT '2025-03-01T11:16:10[u-ca=japanese]'::temporal.plaindatetime::text;
+-- 2025-03-01T11:16:10[u-ca=japanese]
+
+-- The calendar accessor returns the stored calendar name
+SELECT plain_datetime_calendar('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime);
+-- persian
+
+-- Year accessor returns the calendar-specific year
+SELECT plain_datetime_year('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime);
+-- 1403  (Persian Solar Hijri year before Nowruz)
+```
+
+The ISO 8601 calendar annotation (`[u-ca=iso8601]`) is accepted on input but suppressed on output.
+
+## Now functions
+
+### `temporal_now_plaindatetime(tz text) → plaindatetime`
+
+Returns the current `PlainDateTime` at transaction start time as observed in the given IANA timezone, with an ISO 8601 calendar. The timezone is used only to project wall-clock fields; it is **not** stored in the resulting value.
+
+```sql
+SELECT temporal_now_plaindatetime('America/New_York');
+SELECT temporal_now_plaindatetime('Europe/Paris');
+```
+
+## Limitations / planned
+
+- Cast from/to `timestamp` (explicit casts only) — not yet implemented

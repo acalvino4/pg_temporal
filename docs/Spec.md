@@ -81,14 +81,16 @@ calendar_oid: i32, // OID from calendar catalog
 Duration
 
 struct DurationDatum {
-years: i32,
-months: i32,
-weeks: i32,
-days: i32,
-hours: i32,
-minutes: i32,
-seconds: i32,
-nanoseconds: i64,
+years: i64,
+months: i64,
+weeks: i64,
+days: i64,
+hours: i64,
+minutes: i64,
+seconds: i64,
+milliseconds: i64,
+microseconds: i128,
+nanoseconds: i128,
 }
 
 Catalogs

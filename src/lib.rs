@@ -4,6 +4,7 @@ use pgrx::prelude::*;
 
 pub mod catalog;
 pub mod gucs;
+pub mod now;
 pub mod provider;
 pub mod types;
 
@@ -31,6 +32,8 @@ pub mod pg_test {
 #[cfg(any(test, feature = "pg_test"))]
 #[pg_schema]
 mod tests {
+    use pgrx::prelude::*;
+
     include!("types/zoned_datetime/tests.rs");
     include!("types/instant/tests.rs");
     include!("types/plain_datetime/tests.rs");

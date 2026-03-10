@@ -95,11 +95,20 @@ pg_temporal/
 ├── docs/                # design specs, dev log, contributing guide
 │   └── usage/           # user documentation
 ├── src/
-│   ├── catalog.rs       # extension_sql! — timezone + calendar catalog tables
-│   ├── gucs.rs          # GUC declarations and registration
-│   ├── lib.rs           # crate root; module declarations + _PG_init
-│   └── types/           # PostgreSQL type implementations
-│       └── zoned_datetime/   # mod.rs (impl) + tests.rs
+│   ├── bin/
+│   │   └── pgrx_embed.rs        # required by cargo pgrx schema (pgrx ≥ 0.15)
+│   ├── catalog.rs               # extension_sql! — timezone + calendar catalog tables
+│   ├── gucs.rs                  # GUC declarations and registration
+│   ├── lib.rs                   # crate root; module declarations + _PG_init
+│   ├── now.rs                   # temporal_now_* functions (PgClock HostHooks impl)
+│   ├── provider.rs              # process-wide LazyLock<CompiledTzdbProvider>
+│   └── types/                   # PostgreSQL type implementations
+│       ├── catalog.rs           # shared SPI catalog helpers
+│       ├── mod.rs
+│       ├── duration/            # mod.rs (impl) + tests.rs
+│       ├── instant/             # mod.rs (impl) + tests.rs
+│       ├── plain_datetime/      # mod.rs (impl) + tests.rs
+│       └── zoned_datetime/      # mod.rs (impl) + tests.rs
 ├── Cargo.toml
 ├── pg_temporal.control  # PostgreSQL extension manifest
 ├── README.md
@@ -109,16 +118,11 @@ pg_temporal/
 
 ## Notes
 
+- Temporal_rs is alpha-software. If they are missing anything functionality we need, do not attempt our own implementation, just put it in a limitations document. If there is a bug on their end, similarly document it (but you better be damn sure it's their fault; so far it has proven pretty reliable).
+- If spec ever deviates from Temporal, assume the spec is wrong and Temporal is right.
 - `[lib] crate-type = ["cdylib", "lib"]` — both are required. `cdylib` is the extension `.dylib`; `lib` produces the `.rlib` that `pgrx_embed_pg_temporal` links against for schema generation.
 - The macOS linker flag `-Wl,-undefined,dynamic_lookup` in `.cargo/config.toml` is required on macOS. PostgreSQL server symbols are only resolved when the extension is `dlopen`'d.
 - `rust-toolchain.toml` pins an exact version. `channel = "stable"` was deliberately avoided — it gives no reproducibility guarantee.
 - The extension schema is `temporal`, not `pg_temporal`. Schema names starting with `pg_` are reserved for PostgreSQL system schemas and cannot be created even by superusers. The extension package is still named `pg_temporal`.
 - PostgreSQL type names are case-folded to lowercase. `#[derive(PostgresType)]` on a struct named `ZonedDateTime` creates a SQL type called `zoneddatetime` (not `zoned_datetime`). Always verify type names against `cargo pgrx schema` output, not the Rust struct name.
 - `pg_test::postgresql_conf_options()` in `src/lib.rs` adds entries to `target/test-pgdata/18/postgresql.auto.conf`. This is how the `temporal` schema is added to `search_path` for all test sessions. If you modify this function, delete `target/test-pgdata/` to force reinitialization, since pgrx only writes the file when the data directory is first created.
-- If spec ever deviates from Temporal, assume the spec is wrong and Temporal is right.
-
-## Todos
-
-- Timezone type?
-- Check on how zoned datetimes are ordered
-- Ensure tz's or other data is not dependant on system

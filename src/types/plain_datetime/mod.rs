@@ -1,13 +1,19 @@
+// pgrx requires all custom PostgresType parameters in #[pg_extern] functions to be
+// passed by value — references are not supported (`BorrowDatum`/`ArgAbi` are not
+// implemented for user-defined types). The needless_pass_by_value lint correctly
+// identifies that many of these functions don't need ownership, but they must
+// take by value due to this pgrx constraint.
+#![allow(clippy::needless_pass_by_value)]
+
 use pgrx::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
-    PlainDateTime as TemporalPdt,
+    Calendar, PlainDateTime as TemporalPdt,
     options::{DifferenceSettings, DisplayCalendar, Overflow, ToStringRoundingOptions},
 };
 
-use crate::types::catalog::{lookup_calendar_by_oid, lookup_or_insert_calendar};
 use crate::types::duration::Duration;
 
 // ---------------------------------------------------------------------------
@@ -17,12 +23,10 @@ use crate::types::duration::Duration;
 // It cannot represent an absolute instant without knowing the timezone.
 //
 //   year .. nanosecond  – ISO 8601 date/time field values
-//   calendar_oid        – row id in temporal.calendar_catalog (for
-//                         future multi-calendar support; ISO 8601 only
-//                         in Phase 3)
+//   calendar_id         – calendar identifier string (e.g. "iso8601")
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PostgresType)]
+#[derive(Debug, Clone, Serialize, Deserialize, PostgresType)]
 #[inoutfuncs]
 pub struct PlainDateTime {
     year: i32,
@@ -34,7 +38,7 @@ pub struct PlainDateTime {
     millisecond: u16,
     microsecond: u16,
     nanosecond: u16,
-    calendar_oid: i32,
+    calendar_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -56,19 +60,22 @@ impl InOutFuncs for PlainDateTime {
             .unwrap_or_else(|e| error!("invalid plain_datetime \"{s}\": {e}"));
 
         let cal_id = pdt.calendar().identifier();
-        let calendar_oid = lookup_or_insert_calendar(cal_id);
 
+        // Always store the ISO 8601 date fields regardless of calendar so that
+        // output() can round-trip correctly via try_new_iso + with_calendar.
+        // Calendar-specific year/month/day values are computed on demand by the
+        // accessor functions via to_temporal().
         Self {
-            year: pdt.year(),
-            month: pdt.month(),
-            day: pdt.day(),
+            year: pdt.iso_year(),
+            month: pdt.iso_month(),
+            day: pdt.iso_day(),
             hour: pdt.hour(),
             minute: pdt.minute(),
             second: pdt.second(),
             millisecond: pdt.millisecond(),
             microsecond: pdt.microsecond(),
             nanosecond: pdt.nanosecond(),
-            calendar_oid,
+            calendar_id: cal_id.to_string(),
         }
     }
 
@@ -76,8 +83,10 @@ impl InOutFuncs for PlainDateTime {
     ///
     /// The calendar annotation is omitted for ISO 8601 (`DisplayCalendar::Auto`).
     fn output(&self, buffer: &mut pgrx::StringInfo) {
-        // calendar_oid is stored for future multi-calendar support.
-        // In Phase 3 only ISO 8601 is supported, so try_new_iso is correct.
+        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
+        // Fields are always stored as ISO 8601. Use try_new_iso to reconstruct
+        // the datetime, then attach the calendar for annotation only.
         let pdt = TemporalPdt::try_new_iso(
             self.year,
             self.month,
@@ -89,7 +98,8 @@ impl InOutFuncs for PlainDateTime {
             self.microsecond,
             self.nanosecond,
         )
-        .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"));
+        .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"))
+        .with_calendar(cal);
 
         let s = pdt
             .to_ixdtf_string(ToStringRoundingOptions::default(), DisplayCalendar::default())
@@ -100,34 +110,92 @@ impl InOutFuncs for PlainDateTime {
 }
 
 // ---------------------------------------------------------------------------
+// Constructor functions exposed to SQL
+// ---------------------------------------------------------------------------
+
+/// Construct a `PlainDateTime` from individual field values.
+///
+/// `millisecond`, `microsecond`, `nanosecond`, and `cal` are optional; they
+/// default to `0`, `0`, `0`, and `'iso8601'` respectively.
+///
+/// Example:
+/// ```sql
+/// SELECT make_plaindatetime(2025, 6, 15, 12, 30, 0);
+/// SELECT make_plaindatetime(2025, 6, 15, 12, 30, 0, 0, 0, 0, 'iso8601');
+/// ```
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+#[pg_extern(immutable, parallel_safe)]
+pub fn make_plaindatetime(
+    year: i32,
+    month: i32,
+    day: i32,
+    hour: i32,
+    minute: i32,
+    second: i32,
+    millisecond: default!(i32, 0),
+    microsecond: default!(i32, 0),
+    nanosecond: default!(i32, 0),
+    cal: default!(&str, "'iso8601'"),
+) -> PlainDateTime {
+    let month = u8::try_from(month)
+        .unwrap_or_else(|_| error!("make_plaindatetime: invalid month {month}"));
+    let day =
+        u8::try_from(day).unwrap_or_else(|_| error!("make_plaindatetime: invalid day {day}"));
+    let hour =
+        u8::try_from(hour).unwrap_or_else(|_| error!("make_plaindatetime: invalid hour {hour}"));
+    let minute = u8::try_from(minute)
+        .unwrap_or_else(|_| error!("make_plaindatetime: invalid minute {minute}"));
+    let second = u8::try_from(second)
+        .unwrap_or_else(|_| error!("make_plaindatetime: invalid second {second}"));
+    let millisecond = u16::try_from(millisecond)
+        .unwrap_or_else(|_| error!("make_plaindatetime: invalid millisecond {millisecond}"));
+    let microsecond = u16::try_from(microsecond)
+        .unwrap_or_else(|_| error!("make_plaindatetime: invalid microsecond {microsecond}"));
+    let nanosecond = u16::try_from(nanosecond)
+        .unwrap_or_else(|_| error!("make_plaindatetime: invalid nanosecond {nanosecond}"));
+    // Validate that the combination of field values is a legal ISO 8601 date/time.
+    TemporalPdt::try_new_iso(year, month, day, hour, minute, second, millisecond, microsecond, nanosecond)
+        .unwrap_or_else(|e| error!("make_plaindatetime: {e}"));
+    let calendar = Calendar::try_from_utf8(cal.as_bytes())
+        .unwrap_or_else(|e| error!("make_plaindatetime: invalid calendar \"{cal}\": {e}"));
+    PlainDateTime {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        millisecond,
+        microsecond,
+        nanosecond,
+        calendar_id: calendar.identifier().to_string(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Accessor functions exposed to SQL
 // ---------------------------------------------------------------------------
 
-/// Returns the year component.
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
+/// Returns the calendar year (e.g. Persian 1403 for ISO 2025-03-01 with u-ca=persian).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(stable, parallel_safe)]
 pub fn plain_datetime_year(pdt: PlainDateTime) -> i32 {
-    pdt.year
+    pdt.to_temporal().year()
 }
 
-/// Returns the month component (1–12).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
+/// Returns the calendar month (1-indexed within the calendar system).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(stable, parallel_safe)]
 pub fn plain_datetime_month(pdt: PlainDateTime) -> i32 {
-    i32::from(pdt.month)
+    i32::from(pdt.to_temporal().month())
 }
 
-/// Returns the day-of-month component (1–31).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
+/// Returns the calendar day-of-month.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(stable, parallel_safe)]
 pub fn plain_datetime_day(pdt: PlainDateTime) -> i32 {
-    i32::from(pdt.day)
+    i32::from(pdt.to_temporal().day())
 }
 
 /// Returns the hour component (0–23).
@@ -140,8 +208,6 @@ pub fn plain_datetime_hour(pdt: PlainDateTime) -> i32 {
 }
 
 /// Returns the minute component (0–59).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_minute(pdt: PlainDateTime) -> i32 {
@@ -149,8 +215,6 @@ pub fn plain_datetime_minute(pdt: PlainDateTime) -> i32 {
 }
 
 /// Returns the second component (0–59).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_second(pdt: PlainDateTime) -> i32 {
@@ -158,8 +222,6 @@ pub fn plain_datetime_second(pdt: PlainDateTime) -> i32 {
 }
 
 /// Returns the millisecond component (0–999).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_millisecond(pdt: PlainDateTime) -> i32 {
@@ -167,8 +229,6 @@ pub fn plain_datetime_millisecond(pdt: PlainDateTime) -> i32 {
 }
 
 /// Returns the microsecond component (0–999).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_microsecond(pdt: PlainDateTime) -> i32 {
@@ -176,8 +236,6 @@ pub fn plain_datetime_microsecond(pdt: PlainDateTime) -> i32 {
 }
 
 /// Returns the nanosecond component (0–999).
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_nanosecond(pdt: PlainDateTime) -> i32 {
@@ -188,7 +246,7 @@ pub fn plain_datetime_nanosecond(pdt: PlainDateTime) -> i32 {
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_calendar(pdt: PlainDateTime) -> String {
-    lookup_calendar_by_oid(pdt.calendar_oid)
+    pdt.calendar_id
 }
 
 // ---------------------------------------------------------------------------
@@ -197,9 +255,12 @@ pub fn plain_datetime_calendar(pdt: PlainDateTime) -> String {
 
 impl PlainDateTime {
     /// Reconstruct the `temporal_rs` representation from stored fields.
-    /// Phase 3/4: ISO calendar only; `try_new_iso` is correct.
-    // Clippy's wrong_self_convention wants `to_*` on Copy types to take self by value.
-    pub(crate) fn to_temporal(self) -> TemporalPdt {
+    /// ISO calendar only in the current implementation; `try_new_iso` is correct.
+    pub(crate) fn to_temporal(&self) -> TemporalPdt {
+        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
+        // Fields are always stored as ISO 8601. Use try_new_iso then with_calendar
+        // so the calendar is attached without reinterpreting the stored fields.
         TemporalPdt::try_new_iso(
             self.year,
             self.month,
@@ -212,23 +273,27 @@ impl PlainDateTime {
             self.nanosecond,
         )
         .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"))
+        .with_calendar(cal)
     }
 
     /// Build a `PlainDateTime` from a `temporal_rs` plain datetime.
+    ///
+    /// Always stores ISO 8601 fields (`iso_year` / `iso_month` / `iso_day`) regardless
+    /// of the attached calendar, matching the invariant expected by `to_temporal()`
+    /// and `output()` which both reconstruct via `try_new_iso`.
     pub(crate) fn from_temporal(pdt: &TemporalPdt) -> Self {
         let cal_id = pdt.calendar().identifier();
-        let calendar_oid = lookup_or_insert_calendar(cal_id);
         Self {
-            year: pdt.year(),
-            month: pdt.month(),
-            day: pdt.day(),
+            year: pdt.iso_year(),
+            month: pdt.iso_month(),
+            day: pdt.iso_day(),
             hour: pdt.hour(),
             minute: pdt.minute(),
             second: pdt.second(),
             millisecond: pdt.millisecond(),
             microsecond: pdt.microsecond(),
             nanosecond: pdt.nanosecond(),
-            calendar_oid,
+            calendar_id: cal_id.to_string(),
         }
     }
 }
@@ -238,13 +303,11 @@ impl PlainDateTime {
 // ---------------------------------------------------------------------------
 
 /// Returns -1, 0, or 1 comparing two plain datetimes by ISO date/time fields
-/// and, as a tiebreaker, by calendar OID.
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
+/// and, as a tiebreaker, by calendar identifier.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_compare(a: PlainDateTime, b: PlainDateTime) -> i32 {
-    let a_key = (
+    match (
         a.year,
         a.month,
         a.day,
@@ -254,69 +317,56 @@ pub fn plain_datetime_compare(a: PlainDateTime, b: PlainDateTime) -> i32 {
         a.millisecond,
         a.microsecond,
         a.nanosecond,
-        a.calendar_oid,
-    );
-    let b_key = (
-        b.year,
-        b.month,
-        b.day,
-        b.hour,
-        b.minute,
-        b.second,
-        b.millisecond,
-        b.microsecond,
-        b.nanosecond,
-        b.calendar_oid,
-    );
-    match a_key.cmp(&b_key) {
+    )
+        .cmp(&(
+            b.year,
+            b.month,
+            b.day,
+            b.hour,
+            b.minute,
+            b.second,
+            b.millisecond,
+            b.microsecond,
+            b.nanosecond,
+        ))
+        .then_with(|| a.calendar_id.cmp(&b.calendar_id))
+    {
         Ordering::Less => -1,
         Ordering::Equal => 0,
         Ordering::Greater => 1,
     }
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_lt(a: PlainDateTime, b: PlainDateTime) -> bool {
     plain_datetime_compare(a, b) < 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_le(a: PlainDateTime, b: PlainDateTime) -> bool {
     plain_datetime_compare(a, b) <= 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_eq(a: PlainDateTime, b: PlainDateTime) -> bool {
     plain_datetime_compare(a, b) == 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_ne(a: PlainDateTime, b: PlainDateTime) -> bool {
     plain_datetime_compare(a, b) != 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_ge(a: PlainDateTime, b: PlainDateTime) -> bool {
     plain_datetime_compare(a, b) >= 0
 }
 
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_gt(a: PlainDateTime, b: PlainDateTime) -> bool {
