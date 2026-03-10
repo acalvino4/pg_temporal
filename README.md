@@ -2,7 +2,8 @@
 
 A PostgreSQL extension implementing [Temporal](https://tc39.es/proposal-temporal/)-compliant date/time types — nanosecond precision, IANA timezone semantics, full DST disambiguation, and calendar awareness.
 
-> **Note:** This project was almost entirely vibe-coded - I have no prior experience writing database extensions or programming in Rust; expect bugs and non-idiomatic patterns. It is not intended to become a production-grade implmentation — people more familiar with Rust and databases should take that on. Take this as just a POC meant to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem.
+> [!NOTE]
+> This project was almost entirely vibe-coded - I have no prior experience writing database extensions or programming in Rust; expect bugs and non-idiomatic patterns. It is not intended to become a production-grade implmentation — people more familiar with Rust and databases should take that on. Take this as just a POC meant to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem.
 
 ## Why
 
