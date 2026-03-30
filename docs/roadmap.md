@@ -13,3 +13,5 @@ Setting `pg_temporal.default_disambiguation = 'typo'` is accepted by PostgreSQL 
 
 **No version migration path.**
 No `pg_temporal--0.0.1--0.0.2.sql` upgrade scripts. Any schema change requires a full drop/reinstall.
+
+**PlainDate type**

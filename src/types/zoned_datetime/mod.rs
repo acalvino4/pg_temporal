@@ -6,7 +6,6 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -28,30 +27,113 @@ use crate::types::duration::Duration;
 // value.  It is wrapped in a pgrx varlena by the #[derive(PostgresType)]
 // machinery.
 //
-//   instant_ns    – nanoseconds since Unix epoch (same as Temporal's
-//                   epochNanoseconds). i128 gives us the full ±292-year
-//                   range at nanosecond precision.
-//   tz_id         – IANA timezone identifier string (e.g. "America/New_York")
-//   calendar_id   – calendar identifier string (e.g. "iso8601")
+//   epoch_ns  – nanoseconds since Unix epoch (same as Temporal's
+//               epochNanoseconds). i128 gives us the full ±292-year
+//               range at nanosecond precision.
+//   tz_idx    – compact index into the canonical IANA timezone list
+//               (see tz_index module; generated at build time)
+//   cal_idx   – compact calendar index (see cal_index module)
+//
+// Layout: 16 + 2 + 1 = 19 bytes.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, PostgresType)]
-#[inoutfuncs]
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, PostgresType)]
+#[pgvarlena_inoutfuncs]
+#[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct ZonedDateTime {
-    instant_ns: i128,
-    tz_id: String,
-    calendar_id: String,
+    pub(crate) epoch_ns: i128,
+    pub(crate) tz_idx: u16,
+    pub(crate) cal_idx: u8,
+}
+
+// ---------------------------------------------------------------------------
+// Manual IntoDatum / FromDatum / BoxRet / ArgAbi / UnboxDatum
+//
+// The Serde/CBOR path is intentionally bypassed: pgrx's default
+// PostgresType derive uses CBOR serialization, but all on-disk datums
+// here are compact binary via PgVarlena.
+// ---------------------------------------------------------------------------
+
+impl pgrx::datum::IntoDatum for ZonedDateTime {
+    fn into_datum(self) -> Option<pgrx::pg_sys::Datum> {
+        let mut v = PgVarlena::<Self>::new();
+        *v = self;
+        v.into_datum()
+    }
+
+    fn type_oid() -> pgrx::pg_sys::Oid {
+        pgrx::wrappers::rust_regtypein::<Self>()
+    }
+}
+
+impl pgrx::datum::FromDatum for ZonedDateTime {
+    unsafe fn from_polymorphic_datum(
+        datum: pgrx::pg_sys::Datum,
+        is_null: bool,
+        _typoid: pgrx::pg_sys::Oid,
+    ) -> Option<Self> {
+        if is_null {
+            None
+        } else {
+            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
+        }
+    }
+}
+
+unsafe impl pgrx::callconv::BoxRet for ZonedDateTime {
+    unsafe fn box_into<'fcx>(
+        self,
+        fcinfo: &mut pgrx::callconv::FcInfo<'fcx>,
+    ) -> pgrx::datum::Datum<'fcx> {
+        match pgrx::datum::IntoDatum::into_datum(self) {
+            None => fcinfo.return_null(),
+            Some(datum) => unsafe { fcinfo.return_raw_datum(datum) },
+        }
+    }
+}
+
+unsafe impl<'fcx> pgrx::callconv::ArgAbi<'fcx> for ZonedDateTime
+where
+    Self: 'fcx,
+{
+    unsafe fn unbox_arg_unchecked(arg: pgrx::callconv::Arg<'_, 'fcx>) -> Self {
+        let index = arg.index();
+        unsafe {
+            arg.unbox_arg_using_from_datum()
+                .unwrap_or_else(|| panic!("argument {index} must not be null"))
+        }
+    }
+}
+
+unsafe impl pgrx::datum::UnboxDatum for ZonedDateTime {
+    type As<'dat> = Self
+    where
+        Self: 'dat;
+
+    unsafe fn unbox<'dat>(datum: pgrx::datum::Datum<'dat>) -> Self::As<'dat>
+    where
+        Self: 'dat,
+    {
+        unsafe {
+            <Self as pgrx::datum::FromDatum>::from_datum(
+                std::mem::transmute(datum),
+                false,
+            )
+            .unwrap()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Text in / out
 // ---------------------------------------------------------------------------
 
-impl InOutFuncs for ZonedDateTime {
+impl PgVarlenaInOutFuncs for ZonedDateTime {
     /// Parse an IXDTF/RFC-9557 string into a `ZonedDateTime` datum.
     ///
     /// Example input: `2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=iso8601]`
-    fn input(input: &CStr) -> Self {
+    fn input(input: &CStr) -> PgVarlena<Self> {
         let s =
             input.to_str().unwrap_or_else(|_| error!("zoned_datetime input is not valid UTF-8"));
 
@@ -61,29 +143,28 @@ impl InOutFuncs for ZonedDateTime {
             TemporalZdt::from_utf8(s.as_bytes(), disambiguation, OffsetDisambiguation::Reject)
                 .unwrap_or_else(|e| error!("invalid zoned_datetime \"{s}\": {e}"));
 
-        let instant_ns = zdt.epoch_nanoseconds().as_i128();
-
-        let tz_id = zdt
-            .time_zone()
-            .identifier()
-            .unwrap_or_else(|e| error!("failed to get timezone identifier: {e}"));
-
-        let cal_id = zdt.calendar().identifier();
-
-        Self { instant_ns, tz_id, calendar_id: cal_id.to_string() }
+        let mut result = PgVarlena::<Self>::new();
+        *result = ZonedDateTime::from_temporal(&zdt);
+        result
     }
 
     /// Serialize a `ZonedDateTime` datum back to an IXDTF string.
     fn output(&self, buffer: &mut pgrx::StringInfo) {
-        let tz = TimeZone::try_from_str_with_provider(&self.tz_id, &*TZ_PROVIDER)
-            .unwrap_or_else(|e| error!("failed to load timezone \"{}\": {e}", self.tz_id));
-
-        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
-            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
-
-        let zdt = TemporalZdt::try_new_with_provider(self.instant_ns, tz, cal, &*TZ_PROVIDER)
+        // Copy the packed struct to the stack to avoid unaligned references.
+        let this = *self;
+        let tz_idx = this.tz_idx;
+        let cal_idx = this.cal_idx;
+        let epoch_ns = this.epoch_ns;
+        let tz_id = crate::tz_index::name_of(tz_idx)
+            .unwrap_or_else(|| error!("unknown timezone index {tz_idx}"));
+        let tz = TimeZone::try_from_str_with_provider(tz_id, &*TZ_PROVIDER)
+            .unwrap_or_else(|e| error!("failed to load timezone \"{tz_id}\": {e}"));
+        let cal_id = crate::cal_index::name_of(cal_idx)
+            .unwrap_or_else(|| error!("unknown calendar index {cal_idx}"));
+        let cal = Calendar::try_from_utf8(cal_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{cal_id}\": {e}"));
+        let zdt = TemporalZdt::try_new_with_provider(epoch_ns, tz, cal, &*TZ_PROVIDER)
             .unwrap_or_else(|e| error!("failed to reconstruct zoned_datetime: {e}"));
-
         let s = zdt
             .to_ixdtf_string_with_provider(
                 DisplayOffset::default(),
@@ -93,7 +174,6 @@ impl InOutFuncs for ZonedDateTime {
                 &*TZ_PROVIDER,
             )
             .unwrap_or_else(|e| error!("failed to format zoned_datetime: {e}"));
-
         buffer.push_str(&s);
     }
 }
@@ -119,12 +199,17 @@ pub fn make_zoneddatetime(epoch_ns: &str, tz: &str, cal: &str) -> ZonedDateTime 
     });
     let timezone = TimeZone::try_from_str_with_provider(tz, &*TZ_PROVIDER)
         .unwrap_or_else(|e| error!("make_zoneddatetime: invalid timezone \"{tz}\": {e}"));
-    let calendar = Calendar::try_from_utf8(cal.as_bytes())
-        .unwrap_or_else(|e| error!("make_zoneddatetime: invalid calendar \"{cal}\": {e}"));
     let tz_id = timezone
         .identifier()
         .unwrap_or_else(|e| error!("make_zoneddatetime: failed to get timezone identifier: {e}"));
-    ZonedDateTime { instant_ns: ns, tz_id, calendar_id: calendar.identifier().to_string() }
+    let tz_idx = crate::tz_index::index_of(&tz_id)
+        .unwrap_or_else(|| error!("make_zoneddatetime: unsupported timezone \"{tz_id}\""));
+    let calendar = Calendar::try_from_utf8(cal.as_bytes())
+        .unwrap_or_else(|e| error!("make_zoneddatetime: invalid calendar \"{cal}\": {e}"));
+    let cal_id = calendar.identifier();
+    let cal_idx = crate::cal_index::index_of(cal_id)
+        .unwrap_or_else(|| error!("make_zoneddatetime: unsupported calendar \"{cal_id}\""));
+    ZonedDateTime { epoch_ns: ns, tz_idx, cal_idx }
 }
 
 // ---------------------------------------------------------------------------
@@ -135,14 +220,20 @@ pub fn make_zoneddatetime(epoch_ns: &str, tz: &str, cal: &str) -> ZonedDateTime 
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_timezone(zdt: ZonedDateTime) -> String {
-    zdt.tz_id
+    let tz_idx = zdt.tz_idx;
+    crate::tz_index::name_of(tz_idx)
+        .unwrap_or_else(|| error!("zoned_datetime_timezone: unknown timezone index {tz_idx}"))
+        .to_string()
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_calendar(zdt: ZonedDateTime) -> String {
-    zdt.calendar_id
+    let cal_idx = zdt.cal_idx;
+    crate::cal_index::name_of(cal_idx)
+        .unwrap_or_else(|| error!("zoned_datetime_calendar: unknown calendar index {cal_idx}"))
+        .to_string()
 }
 
 /// Returns the UTC epoch in nanoseconds as a text value (i128 has no native
@@ -150,7 +241,8 @@ pub fn zoned_datetime_calendar(zdt: ZonedDateTime) -> String {
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_epoch_ns(zdt: ZonedDateTime) -> String {
-    zdt.instant_ns.to_string()
+    let ns = zdt.epoch_ns;
+    ns.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -160,27 +252,40 @@ pub fn zoned_datetime_epoch_ns(zdt: ZonedDateTime) -> String {
 impl ZonedDateTime {
     /// Reconstruct the `temporal_rs` representation from stored fields.
     pub(crate) fn to_temporal(&self) -> TemporalZdt {
+        // Copy the packed struct to the stack to avoid unaligned references.
+        let this = *self;
+        let tz_idx = this.tz_idx;
+        let cal_idx = this.cal_idx;
+        let epoch_ns = this.epoch_ns;
+        let tz_id = crate::tz_index::name_of(tz_idx)
+            .unwrap_or_else(|| error!("unknown timezone index {tz_idx}"));
         // Use our TZ_PROVIDER so the ResolvedId inside the TimeZone comes from the
         // same provider we pass to add_with_provider / subtract_with_provider etc.
         // Using the internal temporal_rs provider here would cause a ResolvedId
         // mismatch and a "Time zone identifier does not exist" error at runtime.
-        let tz = TimeZone::try_from_str_with_provider(&self.tz_id, &*TZ_PROVIDER)
-            .unwrap_or_else(|e| error!("failed to load timezone \"{}\": {e}", self.tz_id));
-        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
-            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
-        TemporalZdt::try_new_with_provider(self.instant_ns, tz, cal, &*TZ_PROVIDER)
+        let tz = TimeZone::try_from_str_with_provider(tz_id, &*TZ_PROVIDER)
+            .unwrap_or_else(|e| error!("failed to load timezone \"{tz_id}\": {e}"));
+        let cal_id = crate::cal_index::name_of(cal_idx)
+            .unwrap_or_else(|| error!("unknown calendar index {cal_idx}"));
+        let cal = Calendar::try_from_utf8(cal_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{cal_id}\": {e}"));
+        TemporalZdt::try_new_with_provider(epoch_ns, tz, cal, &*TZ_PROVIDER)
             .unwrap_or_else(|e| error!("failed to reconstruct zoned_datetime: {e}"))
     }
 
     /// Build a `ZonedDateTime` from a `temporal_rs` zoned datetime.
     pub(crate) fn from_temporal(zdt: &TemporalZdt) -> Self {
-        let instant_ns = zdt.epoch_nanoseconds().as_i128();
+        let epoch_ns = zdt.epoch_nanoseconds().as_i128();
         let tz_id = zdt
             .time_zone()
             .identifier()
             .unwrap_or_else(|e| error!("failed to get timezone identifier: {e}"));
+        let tz_idx = crate::tz_index::index_of(&tz_id)
+            .unwrap_or_else(|| error!("unknown timezone: {tz_id}"));
         let cal_id = zdt.calendar().identifier();
-        Self { instant_ns, tz_id, calendar_id: cal_id.to_string() }
+        let cal_idx = crate::cal_index::index_of(cal_id)
+            .unwrap_or_else(|| error!("unsupported calendar: {cal_id}"));
+        Self { epoch_ns, tz_idx, cal_idx }
     }
 }
 
@@ -189,28 +294,24 @@ impl ZonedDateTime {
 // ---------------------------------------------------------------------------
 
 /// Returns -1, 0, or 1 comparing two zoned datetimes.
-/// Primary key: epoch nanoseconds; tiebreakers: timezone identifier (lexicographic),
-/// calendar identifier (lexicographic).
+/// Primary key: epoch nanoseconds; tiebreakers: timezone index, calendar index.
 /// Two values are equal only when instant, timezone, and calendar all match
 /// (Temporal identity equality).
 ///
 /// Note: `Temporal.ZonedDateTime.compare()` returns 0 for same-instant different-zone
 /// values, but PostgreSQL btree requires `compare = 0 ↔ equals`, so identity semantics
 /// are used throughout. Same-instant different-zone ordering is unspecified by the
-/// Temporal spec; lexicographic identifier ordering is a valid choice within that ambiguity.
+/// Temporal spec; index ordering is a valid stable choice within that ambiguity.
 #[allow(clippy::doc_markdown)] // "PostgreSQL" is a proper noun, not a code identifier
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn zoned_datetime_compare(a: ZonedDateTime, b: ZonedDateTime) -> i32 {
-    // Primary sort: epoch nanoseconds (absolute temporal order).
-    // Tiebreakers: timezone identifier then calendar identifier, both lexicographic.
-    // This is stable across databases and spec-conformant (the Temporal spec leaves
-    // same-instant different-zone ordering unspecified).
-    match a
-        .instant_ns
-        .cmp(&b.instant_ns)
-        .then_with(|| a.tz_id.cmp(&b.tz_id))
-        .then_with(|| a.calendar_id.cmp(&b.calendar_id))
+    let (a_epoch_ns, a_tz_idx, a_cal_idx) = (a.epoch_ns, a.tz_idx, a.cal_idx);
+    let (b_epoch_ns, b_tz_idx, b_cal_idx) = (b.epoch_ns, b.tz_idx, b.cal_idx);
+    match a_epoch_ns
+        .cmp(&b_epoch_ns)
+        .then_with(|| a_tz_idx.cmp(&b_tz_idx))
+        .then_with(|| a_cal_idx.cmp(&b_cal_idx))
     {
         Ordering::Less => -1,
         Ordering::Equal => 0,

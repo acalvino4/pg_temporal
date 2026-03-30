@@ -1,5 +1,4 @@
 use pgrx::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -17,31 +16,118 @@ use crate::types::duration::Duration;
 //
 //   epoch_ns  – nanoseconds since Unix epoch (same as Temporal's
 //               epochNanoseconds). i128 gives the full ±292-year range.
+//
+// Layout: 16 bytes, fits in a 1-byte short varlena header → 17 B on disk.
+// `epoch_ns` is at bytes 1–16 of the raw datum (byte 0 is the varlena header),
+// enabling external extensions to extract the instant value without
+// deserialising the full datum.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PostgresType)]
-#[inoutfuncs]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PostgresType)]
+#[pgvarlena_inoutfuncs]
+#[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct Instant {
-    epoch_ns: i128,
+    pub(crate) epoch_ns: i128,
+}
+
+// ---------------------------------------------------------------------------
+// Manual IntoDatum / FromDatum / BoxRet / ArgAbi / UnboxDatum
+//
+// The Serde/CBOR path is intentionally bypassed: pgrx's default
+// PostgresType derive uses CBOR serialization, but all on-disk datums
+// here are compact binary via PgVarlena.
+// ---------------------------------------------------------------------------
+
+impl pgrx::datum::IntoDatum for Instant {
+    fn into_datum(self) -> Option<pgrx::pg_sys::Datum> {
+        let mut v = PgVarlena::<Self>::new();
+        *v = self;
+        v.into_datum()
+    }
+
+    fn type_oid() -> pgrx::pg_sys::Oid {
+        pgrx::wrappers::rust_regtypein::<Self>()
+    }
+}
+
+impl pgrx::datum::FromDatum for Instant {
+    unsafe fn from_polymorphic_datum(
+        datum: pgrx::pg_sys::Datum,
+        is_null: bool,
+        _typoid: pgrx::pg_sys::Oid,
+    ) -> Option<Self> {
+        if is_null {
+            None
+        } else {
+            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
+        }
+    }
+}
+
+unsafe impl pgrx::callconv::BoxRet for Instant {
+    unsafe fn box_into<'fcx>(
+        self,
+        fcinfo: &mut pgrx::callconv::FcInfo<'fcx>,
+    ) -> pgrx::datum::Datum<'fcx> {
+        match pgrx::datum::IntoDatum::into_datum(self) {
+            None => fcinfo.return_null(),
+            Some(datum) => unsafe { fcinfo.return_raw_datum(datum) },
+        }
+    }
+}
+
+unsafe impl<'fcx> pgrx::callconv::ArgAbi<'fcx> for Instant
+where
+    Self: 'fcx,
+{
+    unsafe fn unbox_arg_unchecked(arg: pgrx::callconv::Arg<'_, 'fcx>) -> Self {
+        let index = arg.index();
+        unsafe {
+            arg.unbox_arg_using_from_datum()
+                .unwrap_or_else(|| panic!("argument {index} must not be null"))
+        }
+    }
+}
+
+unsafe impl pgrx::datum::UnboxDatum for Instant {
+    type As<'dat> = Self
+    where
+        Self: 'dat;
+
+    unsafe fn unbox<'dat>(datum: pgrx::datum::Datum<'dat>) -> Self::As<'dat>
+    where
+        Self: 'dat,
+    {
+        unsafe {
+            <Self as pgrx::datum::FromDatum>::from_datum(
+                std::mem::transmute(datum),
+                false,
+            )
+            .unwrap()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Text in / out
 // ---------------------------------------------------------------------------
 
-impl InOutFuncs for Instant {
+impl PgVarlenaInOutFuncs for Instant {
     /// Parse an RFC 9557 instant string into an `Instant` datum.
     ///
     /// Example inputs:
     ///   `1970-01-01T00:00:00Z`
     ///   `2025-03-01T11:16:10+09:00`
-    fn input(input: &CStr) -> Self {
+    fn input(input: &CStr) -> PgVarlena<Self> {
         let s = input.to_str().unwrap_or_else(|_| error!("instant input is not valid UTF-8"));
 
         let instant = TemporalInstant::from_utf8(s.as_bytes())
             .unwrap_or_else(|e| error!("invalid instant \"{s}\": {e}"));
 
-        Self { epoch_ns: instant.epoch_nanoseconds().as_i128() }
+        let mut result = PgVarlena::<Self>::new();
+        result.epoch_ns = instant.epoch_nanoseconds().as_i128();
+        result
     }
 
     /// Serialize an `Instant` datum back to an RFC 9557 string in UTC (`Z`).

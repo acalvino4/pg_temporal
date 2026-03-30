@@ -2,8 +2,9 @@ use pgrx::prelude::*;
 
 ::pgrx::pg_module_magic!();
 
-pub mod catalog;
 pub mod gucs;
+pub mod tz_index;
+pub mod cal_index;
 pub mod now;
 pub mod provider;
 pub mod types;

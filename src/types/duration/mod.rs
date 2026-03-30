@@ -1,5 +1,4 @@
 use pgrx::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::ffi::CStr;
 use std::str::FromStr;
 use temporal_rs::{
@@ -17,76 +16,139 @@ use crate::types::zoned_datetime::ZonedDateTime;
 // A Duration is a vector of calendar and time components with no implicit
 // normalization. Every field is stored independently at full precision.
 //
-// The sign of all non-zero fields is uniform (Temporal validity rule).
-// Fields are stored as signed values — matching the public temporal_rs
-// accessor types exactly — so reconstruction is a direct pass-through.
+// All fields are signed; the Temporal validity rule guarantees that all
+// non-zero components share the same sign. Field types mirror those used
+// by temporal_rs (i64 for years–milliseconds, i128 for µs/ns).
 //
-//   years .. nanoseconds  – signed component values
+//   years .. milliseconds – i64
+//   microseconds, nanoseconds – i128
+//
+// Layout: 8×8 + 2×16 = 96 bytes.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PostgresType)]
-#[inoutfuncs]
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, PostgresType)]
+#[pgvarlena_inoutfuncs]
+#[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct Duration {
-    years: i64,
-    months: i64,
-    weeks: i64,
-    days: i64,
-    hours: i64,
-    minutes: i64,
-    seconds: i64,
-    milliseconds: i64,
-    microseconds: i128,
-    nanoseconds: i128,
+    pub(crate) years: i64,
+    pub(crate) months: i64,
+    pub(crate) weeks: i64,
+    pub(crate) days: i64,
+    pub(crate) hours: i64,
+    pub(crate) minutes: i64,
+    pub(crate) seconds: i64,
+    pub(crate) milliseconds: i64,
+    pub(crate) microseconds: i128,
+    pub(crate) nanoseconds: i128,
+}
+
+// ---------------------------------------------------------------------------
+// Manual IntoDatum / FromDatum / BoxRet / ArgAbi / UnboxDatum
+//
+// The Serde/CBOR path is intentionally bypassed: pgrx's default
+// PostgresType derive uses CBOR serialization, but all on-disk datums
+// here are compact binary via PgVarlena.
+// ---------------------------------------------------------------------------
+
+impl pgrx::datum::IntoDatum for Duration {
+    fn into_datum(self) -> Option<pgrx::pg_sys::Datum> {
+        let mut v = PgVarlena::<Self>::new();
+        *v = self;
+        v.into_datum()
+    }
+
+    fn type_oid() -> pgrx::pg_sys::Oid {
+        pgrx::wrappers::rust_regtypein::<Self>()
+    }
+}
+
+impl pgrx::datum::FromDatum for Duration {
+    unsafe fn from_polymorphic_datum(
+        datum: pgrx::pg_sys::Datum,
+        is_null: bool,
+        _typoid: pgrx::pg_sys::Oid,
+    ) -> Option<Self> {
+        if is_null {
+            None
+        } else {
+            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
+        }
+    }
+}
+
+unsafe impl pgrx::callconv::BoxRet for Duration {
+    unsafe fn box_into<'fcx>(
+        self,
+        fcinfo: &mut pgrx::callconv::FcInfo<'fcx>,
+    ) -> pgrx::datum::Datum<'fcx> {
+        match pgrx::datum::IntoDatum::into_datum(self) {
+            None => fcinfo.return_null(),
+            Some(datum) => unsafe { fcinfo.return_raw_datum(datum) },
+        }
+    }
+}
+
+unsafe impl<'fcx> pgrx::callconv::ArgAbi<'fcx> for Duration
+where
+    Self: 'fcx,
+{
+    unsafe fn unbox_arg_unchecked(arg: pgrx::callconv::Arg<'_, 'fcx>) -> Self {
+        let index = arg.index();
+        unsafe {
+            arg.unbox_arg_using_from_datum()
+                .unwrap_or_else(|| panic!("argument {index} must not be null"))
+        }
+    }
+}
+
+unsafe impl pgrx::datum::UnboxDatum for Duration {
+    type As<'dat> = Self
+    where
+        Self: 'dat;
+
+    unsafe fn unbox<'dat>(datum: pgrx::datum::Datum<'dat>) -> Self::As<'dat>
+    where
+        Self: 'dat,
+    {
+        unsafe {
+            <Self as pgrx::datum::FromDatum>::from_datum(
+                std::mem::transmute(datum),
+                false,
+            )
+            .unwrap()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Text in / out
 // ---------------------------------------------------------------------------
 
-impl InOutFuncs for Duration {
+impl PgVarlenaInOutFuncs for Duration {
     /// Parse an ISO 8601 duration string into a `Duration` datum.
     ///
     /// Example inputs:
     ///   `P1Y2M3DT4H5M6S`
     ///   `PT0.000000001S`
     ///   `-P1Y`
-    fn input(input: &CStr) -> Self {
+    fn input(input: &CStr) -> PgVarlena<Self> {
         let s = input.to_str().unwrap_or_else(|_| error!("duration input is not valid UTF-8"));
 
         let d = TemporalDuration::from_utf8(s.as_bytes())
             .unwrap_or_else(|e| error!("invalid duration \"{s}\": {e}"));
 
-        Self {
-            years: d.years(),
-            months: d.months(),
-            weeks: d.weeks(),
-            days: d.days(),
-            hours: d.hours(),
-            minutes: d.minutes(),
-            seconds: d.seconds(),
-            milliseconds: d.milliseconds(),
-            microseconds: d.microseconds(),
-            nanoseconds: d.nanoseconds(),
-        }
+        let mut result = PgVarlena::<Self>::new();
+        *result = Duration::from_temporal(&d);
+        result
     }
 
     /// Serialize a `Duration` datum back to an ISO 8601 duration string.
     fn output(&self, buffer: &mut pgrx::StringInfo) {
-        let d = TemporalDuration::new(
-            self.years,
-            self.months,
-            self.weeks,
-            self.days,
-            self.hours,
-            self.minutes,
-            self.seconds,
-            self.milliseconds,
-            self.microseconds,
-            self.nanoseconds,
-        )
-        .unwrap_or_else(|e| error!("failed to reconstruct duration: {e}"));
-
-        let s = d
+        // Copy the packed struct to the stack to avoid unaligned references.
+        let this = *self;
+        let s = this
+            .to_temporal()
             .as_temporal_string(ToStringRoundingOptions::default())
             .unwrap_or_else(|e| error!("failed to format duration: {e}"));
 
@@ -175,7 +237,8 @@ pub fn duration_milliseconds(d: Duration) -> i64 {
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn duration_microseconds(d: Duration) -> String {
-    d.microseconds.to_string()
+    let us = d.microseconds;
+    us.to_string()
 }
 
 /// Returns the nanoseconds component as text (i128 has no native SQL type;
@@ -183,7 +246,8 @@ pub fn duration_microseconds(d: Duration) -> String {
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn duration_nanoseconds(d: Duration) -> String {
-    d.nanoseconds.to_string()
+    let ns = d.nanoseconds;
+    ns.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -210,9 +274,6 @@ impl Duration {
     }
 
     /// Build a `Duration` from a `temporal_rs` duration.
-    // The accessor methods on TemporalDuration are const fn, but error! is not;
-    // suppress the missing_const_for_fn lint rather than marking const.
-    #[allow(clippy::missing_const_for_fn)]
     pub(crate) fn from_temporal(d: &TemporalDuration) -> Self {
         Self {
             years: d.years(),
@@ -251,26 +312,17 @@ pub fn duration_abs(d: Duration) -> Duration {
 ///
 /// A valid duration has uniform sign (all non-zero components share the same
 /// sign), so the overall sign equals the sign of the first non-zero field.
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn duration_sign(d: Duration) -> i32 {
-    // i64 fields first (years … milliseconds), then i128 fields.
     for v in [d.years, d.months, d.weeks, d.days, d.hours, d.minutes, d.seconds, d.milliseconds] {
-        if v > 0 {
-            return 1;
-        }
-        if v < 0 {
-            return -1;
+        if v != 0 {
+            return v.signum() as i32;
         }
     }
     for v in [d.microseconds, d.nanoseconds] {
-        if v > 0 {
-            return 1;
-        }
-        if v < 0 {
-            return -1;
+        if v != 0 {
+            return v.signum() as i32;
         }
     }
     0
@@ -278,8 +330,6 @@ pub fn duration_sign(d: Duration) -> i32 {
 
 /// Returns true if all components of the duration are zero.
 /// Equivalent to Temporal's `Duration.blank`.
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn duration_is_zero(d: Duration) -> bool {

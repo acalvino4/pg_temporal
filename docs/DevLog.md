@@ -317,7 +317,7 @@ CREATE OPERATOR CLASS instant_btree_ops DEFAULT FOR TYPE Instant USING btree AS
 
 ---
 
-## Phase 5: Constructors, now(), and SPI hardening (partially complete — see Phase 6)
+## Phase 5: Constructors, now(), and SPI hardening (complete)
 
 ### New files
 
@@ -329,11 +329,12 @@ src/
 ### Changes
 
 - `src/types/instant/mod.rs` — added `make_instant(epoch_ns text)`
-- `src/types/plain_datetime/mod.rs` — added `make_plaindatetime(year, month, day, hour, minute, second [, millisecond, microsecond, nanosecond, cal])`
-- `src/types/zoned_datetime/mod.rs` — added `make_zoneddatetime(epoch_ns text, tz text, cal text)`
-- `src/types/duration/mod.rs` — added `duration_add_zoned/plain`, `duration_subtract_zoned/plain`, `duration_round`, `duration_round_zoned/plain`, `duration_total`, `duration_total_zoned/plain`
+- `src/types/plain_datetime/mod.rs` — added `make_plaindatetime`
+- `src/types/zoned_datetime/mod.rs` — added `make_zoneddatetime`
+- `src/types/duration/mod.rs` — added `duration_add_zoned/plain`, `duration_subtract_zoned/plain`, `duration_round`, `duration_round_zoned/plain`, `duration_total`, `duration_total_zoned/plain`; added imports for `DifferenceSettings`, `RelativeTo`, `RoundingOptions`, `Unit`, `std::str::FromStr`, `crate::provider::TZ_PROVIDER`, and the two peer types
 - `src/types/catalog.rs` — replaced all `format!()`-interpolated `Spi::get_one` calls with `Spi::get_one_with_args`; removed `escape_sql_literal`
 - `src/lib.rs` — added `pub mod now`
+- `README.md` — fixed "Arithmetic + comparison operators" status from `planned` → `complete`
 
 ### Key decisions
 
@@ -343,11 +344,20 @@ src/
 **`make_plaindatetime` — `#[allow(clippy::too_many_arguments)]`**
 The constructor necessarily takes 10 parameters (year through nanosecond plus calendar). Clippy's `too_many_arguments` lint was suppressed with an attribute rather than worked around with a builder struct — adding a builder type would add complexity with no user-facing SQL benefit.
 
+**`make_plaindatetime` calendar storage**
+The function uses `TemporalPdt::try_new_iso` for field validation (rejects out-of-range dates), then stores the caller-supplied `cal` string in the catalog independently. Output still uses ISO-only logic (`try_new_iso`) consistent with the rest of the codebase; the calendar OID is retained for future multi-calendar output support.
+
+**`make_zoneddatetime` uses the TZ_PROVIDER**
+`TimeZone::try_from_str_with_provider(tz, &*TZ_PROVIDER)` is used (not the internal temporal_rs provider) so the `ResolvedId` inside the returned `TimeZone` is compatible with all subsequent `*_with_provider` calls.
+
 **`HostHooks` / `HostClock` / `HostTimeZone` impl in `src/now.rs`**
 `temporal_rs` exposes a `Now<H: HostHooks>` struct for obtaining the current instant. The `HostHooks` supertrait requires both `HostClock` (provides `current_time_nanos()`) and `HostTimeZone` (provides the system timezone string). `PgClock` implements all three, delegating to `pg_sys::GetCurrentTimestamp()` for the clock and hardcoding `"UTC"` for the system timezone (the system-local timezone is irrelevant since callers always pass an IANA ID explicitly).
 
 **PostgreSQL epoch offset**
 `GetCurrentTimestamp()` returns microseconds since 2000-01-01 (PostgreSQL epoch). Unix epoch is 1970-01-01. Offset: `946_684_800_000_000 µs`. Conversion chain: `pg_us → unix_us (add offset) → epoch_ns (multiply by 1000, cast to i128) → EpochNanoseconds::from(epoch_ns)`.
+
+**`duration_add/subtract_zoned/plain` implementation strategy**
+`temporal_rs 0.2.0`'s `Duration::add` and `Duration::subtract` accept no `relative_to` parameter. The Temporal spec algorithm for `Duration.prototype.add({ relativeTo })` is equivalent to applying each duration to the reference datetime in sequence, then computing the elapsed duration between the start and the final point. The implementation follows this approach: `start.add(a).add(b)` → `start.until(result)`, using the existing `add_with_provider` / `add` and `until_with_provider` / `until` methods on `ZonedDateTime` and `PlainDateTime` respectively. `DifferenceSettings::default()` is used for the `until` call; the result can be balanced to larger units with `duration_round_*` if needed.
 
 **`RoundingOptions` is `#[non_exhaustive]`**
 `temporal_rs::options::RoundingOptions` carries `#[non_exhaustive]`, so struct literal syntax (including spread `..`) cannot be used from outside the crate. All rounding functions use `RoundingOptions::default()` then mutate the `smallest_unit` field.
@@ -380,15 +390,15 @@ CREATE FUNCTION temporal_now_zoneddatetime(tz text)      RETURNS ZonedDateTime S
 CREATE FUNCTION temporal_now_plaindatetime(tz text)      RETURNS PlainDateTime STABLE STRICT PARALLEL SAFE;
 
 -- Duration arithmetic with relative_to
-CREATE FUNCTION duration_add_zoned(a Duration, b Duration, relative_to ZonedDateTime)   RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_add_zoned(a Duration, b Duration, relative_to ZonedDateTime)      RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION duration_subtract_zoned(a Duration, b Duration, relative_to ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION duration_add_plain(a Duration, b Duration, relative_to PlainDateTime)   RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_add_plain(a Duration, b Duration, relative_to PlainDateTime)      RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION duration_subtract_plain(a Duration, b Duration, relative_to PlainDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
 
 -- Duration rounding
-CREATE FUNCTION duration_round(d Duration, smallest_unit text)                          RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION duration_round_zoned(d Duration, smallest_unit text, relative_to ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION duration_round_plain(d Duration, smallest_unit text, relative_to PlainDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_round(d Duration, smallest_unit text)                                       RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_round_zoned(d Duration, smallest_unit text, relative_to ZonedDateTime)     RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION duration_round_plain(d Duration, smallest_unit text, relative_to PlainDateTime)     RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
 
 -- Duration total
 CREATE FUNCTION duration_total(d Duration, unit text)                                   RETURNS float8 IMMUTABLE STRICT PARALLEL SAFE;
@@ -396,69 +406,12 @@ CREATE FUNCTION duration_total_zoned(d Duration, unit text, relative_to ZonedDat
 CREATE FUNCTION duration_total_plain(d Duration, unit text, relative_to PlainDateTime) RETURNS float8 IMMUTABLE STRICT PARALLEL SAFE;
 ```
 
-> **Note**: The Phase 5 DevLog was written prospectively. When Phase 5 shipped, only
-> `make_instant`, the `now()` functions, and the SPI hardening were implemented.
-> `make_plaindatetime`, `make_zoneddatetime`, and all duration arithmetic/rounding/total
-> functions were completed in Phase 6 (see below).
-
----
-
-## Phase 6: Completing Phase 5 backlog — missing constructors and duration functions (complete)
-
-### Context
-
-A retrospective QA pass against the Phase 5 DevLog revealed the following functions were
-described but not actually implemented:
-
-- `make_plaindatetime`
-- `make_zoneddatetime`
-- `duration_round` / `duration_round_zoned` / `duration_round_plain`
-- `duration_total` / `duration_total_zoned` / `duration_total_plain`
-- `duration_add_zoned` / `duration_subtract_zoned`
-- `duration_add_plain` / `duration_subtract_plain`
-
-### Changes
-
-- `src/types/plain_datetime/mod.rs` — added `make_plaindatetime`
-- `src/types/zoned_datetime/mod.rs` — added `make_zoneddatetime`
-- `src/types/duration/mod.rs` — added all 10 missing duration functions; added imports for
-  `DifferenceSettings`, `RelativeTo`, `RoundingOptions`, `Unit`, `std::str::FromStr`,
-  `crate::provider::TZ_PROVIDER`, and the two peer types
-- `src/types/duration/tests.rs` — added 18 new tests covering round, total, and relative arithmetic
-- `src/types/plain_datetime/tests.rs` — added 5 tests for `make_plaindatetime`
-- `src/types/zoned_datetime/tests.rs` — added 6 tests for `make_zoneddatetime`
-- `README.md` — fixed "Arithmetic + comparison operators" status from `planned` → `complete`
-
-### Key decisions
-
-**`duration_add/subtract_zoned/plain` implementation strategy**
-`temporal_rs 0.2.0`'s `Duration::add` and `Duration::subtract` accept no `relative_to`
-parameter. The Temporal spec algorithm for `Duration.prototype.add({ relativeTo })` is
-equivalent to applying each duration to the reference datetime in sequence, then computing
-the elapsed duration between the start and the final point. The implementation follows this
-approach: `start.add(a).add(b)` → `start.until(result)`, using the existing
-`add_with_provider` / `add` and `until_with_provider` / `until` methods on `ZonedDateTime`
-and `PlainDateTime` respectively. `DifferenceSettings::default()` is used for the `until`
-call; the result can be balanced to larger units with `duration_round_*` if needed.
-
-**`make_plaindatetime` calendar storage**
-The function uses `TemporalPdt::try_new_iso` for field validation (rejects out-of-range
-dates), then stores the caller-supplied `cal` string in the catalog independently. Output
-still uses ISO-only logic (`try_new_iso`) consistent with the rest of the codebase; the
-calendar OID is retained for future multi-calendar output support.
-
-**`make_zoneddatetime` uses the TZ_PROVIDER**
-`TimeZone::try_from_str_with_provider(tz, &*TZ_PROVIDER)` is used (not the internal
-temporal_rs provider) so the `ResolvedId` inside the returned `TimeZone` is compatible with
-all subsequent `*_with_provider` calls.
-
 ### Test count
 
-| Phase        | Tests   |
-| ------------ | ------- |
-| 1–3          | 58      |
-| 4            | +36     |
-| QA + btree   | +3      |
-| 5 (initial)  | 0       |
-| **6 (this)** | **+29** |
-| **Total**    | **126** |
+| Phase      | Tests   |
+| ---------- | ------- |
+| 1–3        | 58      |
+| 4          | +36     |
+| QA + btree | +3      |
+| 5          | +29     |
+| **Total**  | **126** |

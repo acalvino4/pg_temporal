@@ -6,7 +6,6 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -22,89 +21,140 @@ use crate::types::duration::Duration;
 // A PlainDateTime is a calendar-local date and time with no timezone.
 // It cannot represent an absolute instant without knowing the timezone.
 //
-//   year .. nanosecond  – ISO 8601 date/time field values
-//   calendar_id         – calendar identifier string (e.g. "iso8601")
+//   year .. second   – ISO 8601 date/time field values
+//   subsecond_ns     – sub-second precision collapsed into one u32
+//                     (ms*1_000_000 + µs*1_000 + ns); no info is lost
+//   cal_idx          – compact calendar index (see cal_index module)
+//
+// Layout (field order chosen for alignment): i32 + u32 + 6×u8 = 14 bytes.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, PostgresType)]
-#[inoutfuncs]
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, PostgresType)]
+#[pgvarlena_inoutfuncs]
+#[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainDateTime {
-    year: i32,
-    month: u8,
-    day: u8,
-    hour: u8,
-    minute: u8,
-    second: u8,
-    millisecond: u16,
-    microsecond: u16,
-    nanosecond: u16,
-    calendar_id: String,
+    pub(crate) year: i32,
+    pub(crate) subsecond_ns: u32,
+    pub(crate) month: u8,
+    pub(crate) day: u8,
+    pub(crate) hour: u8,
+    pub(crate) minute: u8,
+    pub(crate) second: u8,
+    pub(crate) cal_idx: u8,
+}
+
+// ---------------------------------------------------------------------------
+// Manual IntoDatum / FromDatum / BoxRet / ArgAbi / UnboxDatum
+//
+// The Serde/CBOR path is intentionally bypassed: pgrx's default
+// PostgresType derive uses CBOR serialization, but all on-disk datums
+// here are compact binary via PgVarlena.
+// ---------------------------------------------------------------------------
+
+impl pgrx::datum::IntoDatum for PlainDateTime {
+    fn into_datum(self) -> Option<pgrx::pg_sys::Datum> {
+        let mut v = PgVarlena::<Self>::new();
+        *v = self;
+        v.into_datum()
+    }
+
+    fn type_oid() -> pgrx::pg_sys::Oid {
+        pgrx::wrappers::rust_regtypein::<Self>()
+    }
+}
+
+impl pgrx::datum::FromDatum for PlainDateTime {
+    unsafe fn from_polymorphic_datum(
+        datum: pgrx::pg_sys::Datum,
+        is_null: bool,
+        _typoid: pgrx::pg_sys::Oid,
+    ) -> Option<Self> {
+        if is_null {
+            None
+        } else {
+            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
+        }
+    }
+}
+
+unsafe impl pgrx::callconv::BoxRet for PlainDateTime {
+    unsafe fn box_into<'fcx>(
+        self,
+        fcinfo: &mut pgrx::callconv::FcInfo<'fcx>,
+    ) -> pgrx::datum::Datum<'fcx> {
+        match pgrx::datum::IntoDatum::into_datum(self) {
+            None => fcinfo.return_null(),
+            Some(datum) => unsafe { fcinfo.return_raw_datum(datum) },
+        }
+    }
+}
+
+unsafe impl<'fcx> pgrx::callconv::ArgAbi<'fcx> for PlainDateTime
+where
+    Self: 'fcx,
+{
+    unsafe fn unbox_arg_unchecked(arg: pgrx::callconv::Arg<'_, 'fcx>) -> Self {
+        let index = arg.index();
+        unsafe {
+            arg.unbox_arg_using_from_datum()
+                .unwrap_or_else(|| panic!("argument {index} must not be null"))
+        }
+    }
+}
+
+unsafe impl pgrx::datum::UnboxDatum for PlainDateTime {
+    type As<'dat> = Self
+    where
+        Self: 'dat;
+
+    unsafe fn unbox<'dat>(datum: pgrx::datum::Datum<'dat>) -> Self::As<'dat>
+    where
+        Self: 'dat,
+    {
+        unsafe {
+            <Self as pgrx::datum::FromDatum>::from_datum(
+                std::mem::transmute(datum),
+                false,
+            )
+            .unwrap()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Text in / out
 // ---------------------------------------------------------------------------
 
-impl InOutFuncs for PlainDateTime {
+impl PgVarlenaInOutFuncs for PlainDateTime {
     /// Parse an IXDTF plain datetime string into a `PlainDateTime` datum.
     ///
     /// Example inputs:
     ///   `2025-03-01T11:16:10`
     ///   `2025-03-01T11:16:10.000000001`
     ///   `2025-03-01T11:16:10[u-ca=iso8601]`
-    fn input(input: &CStr) -> Self {
+    fn input(input: &CStr) -> PgVarlena<Self> {
         let s =
             input.to_str().unwrap_or_else(|_| error!("plain_datetime input is not valid UTF-8"));
 
         let pdt = TemporalPdt::from_utf8(s.as_bytes())
             .unwrap_or_else(|e| error!("invalid plain_datetime \"{s}\": {e}"));
 
-        let cal_id = pdt.calendar().identifier();
-
-        // Always store the ISO 8601 date fields regardless of calendar so that
-        // output() can round-trip correctly via try_new_iso + with_calendar.
-        // Calendar-specific year/month/day values are computed on demand by the
-        // accessor functions via to_temporal().
-        Self {
-            year: pdt.iso_year(),
-            month: pdt.iso_month(),
-            day: pdt.iso_day(),
-            hour: pdt.hour(),
-            minute: pdt.minute(),
-            second: pdt.second(),
-            millisecond: pdt.millisecond(),
-            microsecond: pdt.microsecond(),
-            nanosecond: pdt.nanosecond(),
-            calendar_id: cal_id.to_string(),
-        }
+        let mut result = PgVarlena::<Self>::new();
+        *result = PlainDateTime::from_temporal(&pdt);
+        result
     }
 
     /// Serialize a `PlainDateTime` datum back to an IXDTF string.
     ///
     /// The calendar annotation is omitted for ISO 8601 (`DisplayCalendar::Auto`).
     fn output(&self, buffer: &mut pgrx::StringInfo) {
-        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
-            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
-        // Fields are always stored as ISO 8601. Use try_new_iso to reconstruct
-        // the datetime, then attach the calendar for annotation only.
-        let pdt = TemporalPdt::try_new_iso(
-            self.year,
-            self.month,
-            self.day,
-            self.hour,
-            self.minute,
-            self.second,
-            self.millisecond,
-            self.microsecond,
-            self.nanosecond,
-        )
-        .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"))
-        .with_calendar(cal);
-
+        // Copy packed struct to the stack to avoid unaligned references.
+        let this = *self;
+        let pdt = this.to_temporal();
         let s = pdt
             .to_ixdtf_string(ToStringRoundingOptions::default(), DisplayCalendar::default())
             .unwrap_or_else(|e| error!("failed to format plain_datetime: {e}"));
-
         buffer.push_str(&s);
     }
 }
@@ -159,17 +209,21 @@ pub fn make_plaindatetime(
         .unwrap_or_else(|e| error!("make_plaindatetime: {e}"));
     let calendar = Calendar::try_from_utf8(cal.as_bytes())
         .unwrap_or_else(|e| error!("make_plaindatetime: invalid calendar \"{cal}\": {e}"));
+    let cal_id = calendar.identifier();
+    let cal_idx = crate::cal_index::index_of(cal_id)
+        .unwrap_or_else(|| error!("make_plaindatetime: unsupported calendar \"{cal_id}\""));
+    let subsecond_ns = (millisecond as u32) * 1_000_000
+        + (microsecond as u32) * 1_000
+        + nanosecond as u32;
     PlainDateTime {
         year,
+        subsecond_ns,
         month,
         day,
         hour,
         minute,
         second,
-        millisecond,
-        microsecond,
-        nanosecond,
-        calendar_id: calendar.identifier().to_string(),
+        cal_idx,
     }
 }
 
@@ -225,28 +279,30 @@ pub fn plain_datetime_second(pdt: PlainDateTime) -> i32 {
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_millisecond(pdt: PlainDateTime) -> i32 {
-    i32::from(pdt.millisecond)
+    (pdt.subsecond_ns / 1_000_000) as i32
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_microsecond(pdt: PlainDateTime) -> i32 {
-    i32::from(pdt.microsecond)
+    ((pdt.subsecond_ns % 1_000_000) / 1_000) as i32
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_nanosecond(pdt: PlainDateTime) -> i32 {
-    i32::from(pdt.nanosecond)
+    (pdt.subsecond_ns % 1_000) as i32
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_calendar(pdt: PlainDateTime) -> String {
-    pdt.calendar_id
+    crate::cal_index::name_of(pdt.cal_idx)
+        .unwrap_or_else(|| error!("plain_datetime_calendar: unknown calendar index {}", pdt.cal_idx))
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -255,22 +311,23 @@ pub fn plain_datetime_calendar(pdt: PlainDateTime) -> String {
 
 impl PlainDateTime {
     /// Reconstruct the `temporal_rs` representation from stored fields.
-    /// ISO calendar only in the current implementation; `try_new_iso` is correct.
+    /// Fields are always stored as ISO 8601; `try_new_iso` is correct.
     pub(crate) fn to_temporal(&self) -> TemporalPdt {
-        let cal = Calendar::try_from_utf8(self.calendar_id.as_bytes())
-            .unwrap_or_else(|e| error!("failed to load calendar \"{}\": {e}", self.calendar_id));
+        // Copy packed struct to the stack to avoid unaligned references.
+        let this = *self;
+        let cal_id = crate::cal_index::name_of(this.cal_idx)
+            .unwrap_or_else(|| error!("unknown calendar index {}", this.cal_idx));
+        let cal = Calendar::try_from_utf8(cal_id.as_bytes())
+            .unwrap_or_else(|e| error!("failed to load calendar \"{cal_id}\": {e}"));
+        let ms = (this.subsecond_ns / 1_000_000) as u16;
+        let us = ((this.subsecond_ns % 1_000_000) / 1_000) as u16;
+        let ns = (this.subsecond_ns % 1_000) as u16;
         // Fields are always stored as ISO 8601. Use try_new_iso then with_calendar
         // so the calendar is attached without reinterpreting the stored fields.
         TemporalPdt::try_new_iso(
-            self.year,
-            self.month,
-            self.day,
-            self.hour,
-            self.minute,
-            self.second,
-            self.millisecond,
-            self.microsecond,
-            self.nanosecond,
+            this.year, this.month, this.day,
+            this.hour, this.minute, this.second,
+            ms, us, ns,
         )
         .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"))
         .with_calendar(cal)
@@ -283,17 +340,20 @@ impl PlainDateTime {
     /// and `output()` which both reconstruct via `try_new_iso`.
     pub(crate) fn from_temporal(pdt: &TemporalPdt) -> Self {
         let cal_id = pdt.calendar().identifier();
+        let cal_idx = crate::cal_index::index_of(cal_id)
+            .unwrap_or_else(|| error!("unsupported calendar: {cal_id}"));
+        let subsecond_ns = (pdt.millisecond() as u32) * 1_000_000
+            + (pdt.microsecond() as u32) * 1_000
+            + pdt.nanosecond() as u32;
         Self {
             year: pdt.iso_year(),
+            subsecond_ns,
             month: pdt.iso_month(),
             day: pdt.iso_day(),
             hour: pdt.hour(),
             minute: pdt.minute(),
             second: pdt.second(),
-            millisecond: pdt.millisecond(),
-            microsecond: pdt.microsecond(),
-            nanosecond: pdt.nanosecond(),
-            calendar_id: cal_id.to_string(),
+            cal_idx,
         }
     }
 }
@@ -303,33 +363,14 @@ impl PlainDateTime {
 // ---------------------------------------------------------------------------
 
 /// Returns -1, 0, or 1 comparing two plain datetimes by ISO date/time fields
-/// and, as a tiebreaker, by calendar identifier.
+/// and, as a tiebreaker, by calendar index (which preserves lexicographic
+/// calendar-name ordering since the cal_index list is alphabetically sorted).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plain_datetime_compare(a: PlainDateTime, b: PlainDateTime) -> i32 {
-    match (
-        a.year,
-        a.month,
-        a.day,
-        a.hour,
-        a.minute,
-        a.second,
-        a.millisecond,
-        a.microsecond,
-        a.nanosecond,
-    )
-        .cmp(&(
-            b.year,
-            b.month,
-            b.day,
-            b.hour,
-            b.minute,
-            b.second,
-            b.millisecond,
-            b.microsecond,
-            b.nanosecond,
-        ))
-        .then_with(|| a.calendar_id.cmp(&b.calendar_id))
+    match (a.year, a.month, a.day, a.hour, a.minute, a.second, a.subsecond_ns)
+        .cmp(&(b.year, b.month, b.day, b.hour, b.minute, b.second, b.subsecond_ns))
+        .then_with(|| a.cal_idx.cmp(&b.cal_idx))
     {
         Ordering::Less => -1,
         Ordering::Equal => 0,
