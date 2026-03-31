@@ -1,0 +1,20 @@
+-- pgbench script: mixed timezone INSERT throughput (10 representative zones)
+-- File: bench_results/sql/bench_insert_mixed.pgbench
+\set tz_idx random(1, 10)
+SET search_path = 'temporal, public';
+INSERT INTO bench.zdt_throughput (val)
+VALUES (
+  ('{' ||
+    '"1":"2024-06-15T12:00:00+00:00[UTC]",' ||
+    '"2":"2024-06-15T08:00:00-04:00[America/New_York]",' ||
+    '"3":"2024-06-15T13:00:00+01:00[Europe/London]",' ||
+    '"4":"2024-06-15T21:00:00+09:00[Asia/Tokyo]",' ||
+    '"5":"2024-06-15T22:00:00+10:00[Australia/Sydney]",' ||
+    '"6":"2024-06-15T09:00:00-03:00[America/Sao_Paulo]",' ||
+    '"7":"2024-06-15T14:00:00+02:00[Africa/Cairo]",' ||
+    '"8":"2024-06-15T17:30:00+05:30[Asia/Kolkata]",' ||
+    '"9":"2024-06-16T00:00:00+12:00[Pacific/Auckland]",' ||
+    '"10":"2024-06-15T05:00:00-07:00[America/Los_Angeles]"' ||
+  '}')::jsonb ->> :tz_idx::text
+)::temporal.zoneddatetime
+);
