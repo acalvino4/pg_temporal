@@ -3,13 +3,13 @@
 A PostgreSQL extension implementing [Temporal](https://tc39.es/proposal-temporal/)-compliant date/time types — nanosecond precision, IANA timezone semantics, full DST disambiguation, and calendar awareness.
 
 > [!NOTE]
-> This project was almost entirely vibe-coded - I have no prior experience writing database extensions or programming in Rust; expect bugs and non-idiomatic patterns. It is not intended to become a production-grade implmentation — people more familiar with Rust and databases should take that on. Take this as just a POC meant to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem.
+> I have no prior experience writing database extensions or programming in Rust, and will gladly accept feedback about bugs or non-idiomatic rust patterns from people more familiar with the language and database development. My hope is for this to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem. Whether this project grows to fill that gap, or merely inspires others to do so, it will have achieved its purpose.
 
 ## Why
 
 With JodaTime, NodaTime, Temporal, and temporal_rs out (or soon to be out) in the wild, application code in most popular languages can now easily follow sane and consistent standards. However, this robustness is **lost** as soon as we need our datetime data to persist in the database layer.
 
-Sure, db's have timestamp types, and generally handle UTC offsets as well, but these solutions suffer from the same or similar shortcomings as most langauges' naive implementations: no nanosecond precision, no explicit calendar support, ambiguous DST handling, poor timezone support, and no standard for duration arithmetic. `pg_temporal` brings the Temporal API's rigorous date/time model directly into SQL.
+Sure, db's have timestamp types, and generally handle UTC offsets as well, but these solutions suffer from the same or similar shortcomings as most languages' naive implementations: no nanosecond precision, no explicit calendar support, ambiguous DST handling, poor timezone support, and no standard for duration arithmetic. `pg_temporal` brings the Temporal API's rigorous date/time model directly into SQL.
 
 ## Types
 
@@ -64,4 +64,4 @@ Built with [pgrx](https://github.com/pgcentralfoundation/pgrx) (Rust ↔ Postgre
 - Temporal: this spec-driven ai-development would've been impossible without such a robust spec and the countless hours pours into it
 - JodaTime/NodaTime - the forerunners of Temporal
 - Rust: even with ai-assistance, I highly doubt I could've made an extension that doesn't immediately crash if not for such a robust compiler
-- temporal_rs: saved me (that is, claude) from having to worry about any of the business logic. v0.2.0 happened to come out just days before I had this idea, and I suspect I may have hit many more blocks if not for it's timely release
+- temporal_rs: saved me (that is, claude) from having to worry about any of the business logic. v0.2.0 happened to come out just days before I had this idea, and I suspect I may have hit many more blocks if not for it's timely release. My understanding is that this project is at the core of all browser and js engine temporal implementations, which means that using it at the db layer should keep behavior aligned across all layers of a js web app!
