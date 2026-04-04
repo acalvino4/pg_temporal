@@ -251,12 +251,10 @@ pub fn zoned_datetime_epoch_ns(zdt: ZonedDateTime) -> String {
 
 impl ZonedDateTime {
     /// Reconstruct the `temporal_rs` representation from stored fields.
-    pub(crate) fn to_temporal(&self) -> TemporalZdt {
-        // Copy the packed struct to the stack to avoid unaligned references.
-        let this = *self;
-        let tz_idx = this.tz_idx;
-        let cal_idx = this.cal_idx;
-        let epoch_ns = this.epoch_ns;
+    pub(crate) fn to_temporal(self) -> TemporalZdt {
+        let tz_idx = self.tz_idx;
+        let cal_idx = self.cal_idx;
+        let epoch_ns = self.epoch_ns;
         let tz_id = crate::tz_index::name_of(tz_idx)
             .unwrap_or_else(|| error!("unknown timezone index {tz_idx}"));
         // Use our TZ_PROVIDER so the ResolvedId inside the TimeZone comes from the

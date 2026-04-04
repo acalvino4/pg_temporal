@@ -1,6 +1,6 @@
 # pg_temporal
 
-A PostgreSQL extension implementing [Temporal](https://tc39.es/proposal-temporal/)-compliant date/time types — nanosecond precision, IANA timezone semantics, full DST disambiguation, and calendar awareness.
+A PostgreSQL extension implementing [Temporal](https://tc39.es/proposal-temporal/)-compliant date/time types — including nanosecond precision, IANA timezone semantics, full DST disambiguation, calendar awareness, and RFC compliance.
 
 > [!NOTE]
 > I have no prior experience writing database extensions or programming in Rust, and will gladly accept feedback about bugs or non-idiomatic rust patterns from people more familiar with the language and database development. My hope is for this to raise awareness that robust datetime handling at the database layer is an essential, yet unsolved problem. Whether this project grows to fill that gap, or merely inspires others to do so, it will have achieved its purpose.
@@ -13,12 +13,16 @@ Sure, db's have timestamp types, and generally handle UTC offsets as well, but t
 
 ## Types
 
-| Type                      | Description                                                  |
-| ------------------------- | ------------------------------------------------------------ |
-| `temporal.zoneddatetime`  | Timezone-aware datetime (instant + IANA zone + calendar)     |
-| `temporal.instant`        | Absolute UTC instant, no timezone                            |
-| `temporal.plain_datetime` | Calendar-local datetime, no timezone                         |
-| `temporal.duration`       | Full vector duration (years → nanoseconds), no normalization |
+| Type                           | Description                                                  |
+| ------------------------------ | ------------------------------------------------------------ |
+| `temporal.zoneddatetime`       | Timezone-aware datetime (instant + IANA zone + calendar)     |
+| `temporal.instant`             | Absolute UTC instant, no timezone                            |
+| `temporal.plain_datetime`      | Calendar-local datetime, no timezone                         |
+| `temporal.plain_date`          | Calendar-local date, no time or timezone                     |
+| `temporal.plain_time`          | Wall-clock time, no date, timezone, or calendar              |
+| `temporal.plain_year_month`    | Calendar-local year and month, no day                        |
+| `temporal.plain_month_day`     | Calendar-local month and day, no year                        |
+| `temporal.duration`            | Full vector duration (years → nanoseconds), no normalization |
 
 ## Key properties
 
@@ -45,6 +49,7 @@ Sure, db's have timestamp types, and generally handle UTC offsets as well, but t
 | `duration_round` / `duration_total`       | complete |
 | `duration_add/subtract` with `relativeTo` | complete |
 | Arithmetic + comparison operators         | complete |
+| `plain_date`, `plain_time`, `plain_year_month`, `plain_month_day` | complete |
 
 ## Implementation
 
@@ -57,6 +62,10 @@ Built with [pgrx](https://github.com/pgcentralfoundation/pgrx) (Rust ↔ Postgre
 - [ZonedDateTime](docs/usage/zoned_datetime.md)
 - [Instant](docs/usage/instant.md)
 - [PlainDateTime](docs/usage/plain_datetime.md)
+- [PlainDate](docs/usage/plain_date.md)
+- [PlainTime](docs/usage/plain_time.md)
+- [PlainYearMonth](docs/usage/plain_year_month.md)
+- [PlainMonthDay](docs/usage/plain_month_day.md)
 - [Duration](docs/usage/duration.md)
 
 ## Thanks

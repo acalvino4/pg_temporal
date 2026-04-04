@@ -25,7 +25,9 @@ use timezone_provider::provider::TimeZoneProvider;
 
 use crate::provider::TZ_PROVIDER;
 use crate::types::instant::Instant;
+use crate::types::plain_date::PlainDate;
 use crate::types::plain_datetime::PlainDateTime;
+use crate::types::plain_time::PlainTime;
 use crate::types::zoned_datetime::ZonedDateTime;
 
 // ---------------------------------------------------------------------------
@@ -115,4 +117,26 @@ pub fn temporal_now_zoneddatetime(tz: &str) -> ZonedDateTime {
 #[pg_extern(stable, parallel_safe)]
 pub fn temporal_now_plaindatetime(tz: &str) -> PlainDateTime {
     PlainDateTime::from_temporal(&current_zdt(tz, "temporal_now_plaindatetime").to_plain_date_time())
+}
+
+/// Returns the current `PlainDate` at transaction start time as observed
+/// in the given IANA timezone, with an ISO 8601 calendar.
+///
+/// Example: `SELECT temporal_now_plaindate('America/New_York');`
+#[must_use]
+#[pg_extern(stable, parallel_safe)]
+pub fn temporal_now_plaindate(tz: &str) -> PlainDate {
+    let pdt = current_zdt(tz, "temporal_now_plaindate").to_plain_date_time();
+    PlainDate::from_temporal(&pdt.to_plain_date())
+}
+
+/// Returns the current `PlainTime` at transaction start time as observed
+/// in the given IANA timezone.
+///
+/// Example: `SELECT temporal_now_plaintime('Asia/Tokyo');`
+#[must_use]
+#[pg_extern(stable, parallel_safe)]
+pub fn temporal_now_plaintime(tz: &str) -> PlainTime {
+    let pdt = current_zdt(tz, "temporal_now_plaintime").to_plain_date_time();
+    PlainTime::from_temporal(&pdt.to_plain_time())
 }

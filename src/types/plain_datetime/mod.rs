@@ -149,9 +149,7 @@ impl PgVarlenaInOutFuncs for PlainDateTime {
     ///
     /// The calendar annotation is omitted for ISO 8601 (`DisplayCalendar::Auto`).
     fn output(&self, buffer: &mut pgrx::StringInfo) {
-        // Copy packed struct to the stack to avoid unaligned references.
-        let this = *self;
-        let pdt = this.to_temporal();
+        let pdt = self.to_temporal();
         let s = pdt
             .to_ixdtf_string(ToStringRoundingOptions::default(), DisplayCalendar::default())
             .unwrap_or_else(|e| error!("failed to format plain_datetime: {e}"));
@@ -312,21 +310,21 @@ pub fn plain_datetime_calendar(pdt: PlainDateTime) -> String {
 impl PlainDateTime {
     /// Reconstruct the `temporal_rs` representation from stored fields.
     /// Fields are always stored as ISO 8601; `try_new_iso` is correct.
-    pub(crate) fn to_temporal(&self) -> TemporalPdt {
-        // Copy packed struct to the stack to avoid unaligned references.
-        let this = *self;
-        let cal_id = crate::cal_index::name_of(this.cal_idx)
-            .unwrap_or_else(|| error!("unknown calendar index {}", this.cal_idx));
+    pub(crate) fn to_temporal(self) -> TemporalPdt {
+        let cal_idx = self.cal_idx;
+        let subsecond_ns = self.subsecond_ns;
+        let cal_id = crate::cal_index::name_of(cal_idx)
+            .unwrap_or_else(|| error!("unknown calendar index {cal_idx}"));
         let cal = Calendar::try_from_utf8(cal_id.as_bytes())
             .unwrap_or_else(|e| error!("failed to load calendar \"{cal_id}\": {e}"));
-        let ms = (this.subsecond_ns / 1_000_000) as u16;
-        let us = ((this.subsecond_ns % 1_000_000) / 1_000) as u16;
-        let ns = (this.subsecond_ns % 1_000) as u16;
+        let ms = (subsecond_ns / 1_000_000) as u16;
+        let us = ((subsecond_ns % 1_000_000) / 1_000) as u16;
+        let ns = (subsecond_ns % 1_000) as u16;
         // Fields are always stored as ISO 8601. Use try_new_iso then with_calendar
         // so the calendar is attached without reinterpreting the stored fields.
         TemporalPdt::try_new_iso(
-            this.year, this.month, this.day,
-            this.hour, this.minute, this.second,
+            self.year, self.month, self.day,
+            self.hour, self.minute, self.second,
             ms, us, ns,
         )
         .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"))

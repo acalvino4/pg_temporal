@@ -415,3 +415,137 @@ CREATE FUNCTION duration_total_plain(d Duration, unit text, relative_to PlainDat
 | QA + btree | +3      |
 | 5          | +29     |
 | **Total**  | **126** |
+
+---
+
+## Phase 6: PlainDate, PlainTime, PlainYearMonth, PlainMonthDay (complete)
+
+### New files
+
+```
+src/
+└── types/
+    ├── plain_date/
+    │   ├── mod.rs       # PgVarlenaInOutFuncs impl, SQL accessors, arithmetic, btree
+    │   └── tests.rs
+    ├── plain_time/
+    │   ├── mod.rs       # PgVarlenaInOutFuncs impl, SQL accessors, arithmetic, btree
+    │   └── tests.rs
+    ├── plain_year_month/
+    │   ├── mod.rs       # PgVarlenaInOutFuncs impl, SQL accessors, arithmetic, btree
+    │   └── tests.rs
+    └── plain_month_day/
+        ├── mod.rs       # PgVarlenaInOutFuncs impl, SQL accessors, comparison, btree
+        └── tests.rs
+
+docs/usage/
+    ├── plain_date.md
+    ├── plain_time.md
+    ├── plain_year_month.md
+    └── plain_month_day.md
+```
+
+### Modified files
+
+- `src/types/mod.rs` — added four new `pub mod` declarations
+- `src/lib.rs` — added four new `include!` for test files
+- `src/now.rs` — added `temporal_now_plaindate`, `temporal_now_plaintime`, and their imports
+- `README.md` — updated Types table (8 entries) and Status table; added 4 new Docs links
+
+### Key decisions
+
+**`PlainDate.iso` is `pub(crate)` in temporal_rs**
+`temporal_rs::PlainDate.iso` (the `IsoDate` struct containing year/month/day) is not accessible from outside the crate. Worked around by calling `pd.to_plain_date_time(None)` first, which returns a `PlainDateTime` whose `iso_year()`, `iso_month()`, `iso_day()` methods are `pub`. This is used both in `from_temporal()` (field extraction) and `PlainDate::input()` (parsing validation).
+
+**`PlainYearMonth.iso` is also `pub(crate)` in temporal_rs**
+Same restriction as `PlainDate`. Worked around by calling `pym.to_ixdtf_string(DisplayCalendar::Never)`, which for the ISO calendar always produces `"YYYY-MM"`. Year and month are extracted by splitting on the last `-` via `rsplit_once('-')`.
+
+**`PlainMonthDay.iso` is `pub`**
+Unlike the two types above, `PlainMonthDay.iso` is a fully public field, so year/month/day can be accessed directly as `pmd.iso.year`, `pmd.iso.month`, `pmd.iso.day`. No workaround needed.
+
+**`PlainMonthDay` stores an ISO reference year**
+`PlainMonthDay` has no calendar year by definition, but the underlying `IsoDate` always carries one. temporal_rs uses `1972` (the first ISO 8601 leap year) as the reference year for the ISO calendar, which allows `--02-29` (the leap day) to be stored as a valid value. The reference year is persisted in `PlainMonthDay.iso_year` and round-trips transparently through `to_temporal()` / `from_temporal()`.
+
+**`PlainTime` storage has no calendar field**
+`PlainTime` is the only type with no calendar. The storage struct is `#[repr(C, packed)] struct PlainTime { subsecond_ns: u32, hour: u8, minute: u8, second: u8 }` (7 bytes). `subsecond_ns` packs milliseconds, microseconds, and nanoseconds as a single `u32` matching the accessor decomposition `ms * 1_000_000 + µs * 1_000 + ns`. All six time-component accessors extract their field from the packed value.
+
+**`PlainTime` addition wraps at midnight**
+Per the Temporal spec, adding a duration to a `PlainTime` that crosses midnight wraps around — no date overflow is returned. The `temporal_rs::PlainTime::add` result has no `overflow` component; the return value is just the new time modulo 24 h. Tests assert this behavior (`23:00 + PT3H = 02:00`).
+
+**`PlainYearMonth` arithmetic rejects non-year/month durations**
+The Temporal spec forbids adding weeks, days, or time components to a `PlainYearMonth`. temporal_rs enforces this natively — if the supplied `Duration` contains any non-zero field outside of years/months, `add` returns an error. The `pg_error!` propagates that error as a SQL error, matching the spec intent.
+
+**`PlainMonthDay` has no arithmetic**
+Per the Temporal spec, `PlainMonthDay` does not support `add`, `subtract`, `since`, or `until` — these operations all require a year, which `PlainMonthDay` deliberately omits. Only comparison operators and a btree operator class are implemented.
+
+**`temporal_now_plaindate` and `temporal_now_plaintime`**
+Both are implemented in `src/now.rs` by delegating to `current_zdt(tz, fn_name)` (the existing helper that calls `Now::<PgClock>::zoneddatetime_with_provider`) and then calling `.to_plain_date_time()` on the result, followed by `.to_plain_date()` or `.to_plain_time()` respectively. This reuses the existing PostgreSQL-epoch offset logic without duplication.
+
+### New SQL functions
+
+```sql
+-- PlainDate
+CREATE FUNCTION make_plaindate(year int, month int, day int [, cal text DEFAULT 'iso8601']) RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_year(pd PlainDate)                    RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_month(pd PlainDate)                   RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_day(pd PlainDate)                     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_calendar(pd PlainDate)                RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_compare(a PlainDate, b PlainDate)     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainDate, RIGHTARG = PlainDate);
+CREATE OPERATOR CLASS plain_date_btree_ops DEFAULT FOR TYPE PlainDate USING btree;
+CREATE FUNCTION plain_date_add(pd PlainDate, dur Duration)                   RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_subtract(pd PlainDate, dur Duration)              RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_since(pd PlainDate, other PlainDate)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_date_until(pd PlainDate, other PlainDate)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION temporal_now_plaindate(tz text)                              RETURNS PlainDate STABLE   STRICT PARALLEL SAFE;
+
+-- PlainTime
+CREATE FUNCTION make_plaintime(hour int, minute int, second int [, millisecond int DEFAULT 0, microsecond int DEFAULT 0, nanosecond int DEFAULT 0]) RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_hour(pt PlainTime)                    RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_minute(pt PlainTime)                  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_second(pt PlainTime)                  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_millisecond(pt PlainTime)             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_microsecond(pt PlainTime)             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_nanosecond(pt PlainTime)              RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_compare(a PlainTime, b PlainTime)     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainTime, RIGHTARG = PlainTime);
+CREATE OPERATOR CLASS plain_time_btree_ops DEFAULT FOR TYPE PlainTime USING btree;
+CREATE FUNCTION plain_time_add(pt PlainTime, dur Duration)                   RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_subtract(pt PlainTime, dur Duration)              RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_since(pt PlainTime, other PlainTime)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_time_until(pt PlainTime, other PlainTime)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION temporal_now_plaintime(tz text)                              RETURNS PlainTime STABLE   STRICT PARALLEL SAFE;
+
+-- PlainYearMonth
+CREATE FUNCTION make_plainyearmonth(year int, month int [, cal text DEFAULT 'iso8601']) RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_year(pym PlainYearMonth)                          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_month(pym PlainYearMonth)                         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_calendar(pym PlainYearMonth)                      RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_compare(a PlainYearMonth, b PlainYearMonth)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth);
+CREATE OPERATOR CLASS plain_year_month_btree_ops DEFAULT FOR TYPE PlainYearMonth USING btree;
+CREATE FUNCTION plain_year_month_add(pym PlainYearMonth, dur Duration)             RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_subtract(pym PlainYearMonth, dur Duration)        RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_since(pym PlainYearMonth, other PlainYearMonth)   RETURNS Duration       IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_year_month_until(pym PlainYearMonth, other PlainYearMonth)   RETURNS Duration       IMMUTABLE STRICT PARALLEL SAFE;
+
+-- PlainMonthDay
+CREATE FUNCTION make_plainmonthday(month int, day int [, cal text DEFAULT 'iso8601']) RETURNS PlainMonthDay IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_month_day_month(pmd PlainMonthDay)                           RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_month_day_day(pmd PlainMonthDay)                             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_month_day_calendar(pmd PlainMonthDay)                        RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plain_month_day_compare(a PlainMonthDay, b PlainMonthDay)          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay);
+CREATE OPERATOR CLASS plain_month_day_btree_ops DEFAULT FOR TYPE PlainMonthDay USING btree;
+```
+
+### Test count
+
+| Phase      | Tests   |
+| ---------- | ------- |
+| 1–3        | 58      |
+| 4          | +36     |
+| QA + btree | +3      |
+| 5          | +29     |
+| 6          | +86     |
+| **Total**  | **212** |

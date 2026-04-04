@@ -37,6 +37,10 @@ mod tests {
 
     include!("types/zoned_datetime/tests.rs");
     include!("types/instant/tests.rs");
+    include!("types/plain_date/tests.rs");
     include!("types/plain_datetime/tests.rs");
+    include!("types/plain_month_day/tests.rs");
+    include!("types/plain_time/tests.rs");
+    include!("types/plain_year_month/tests.rs");
     include!("types/duration/tests.rs");
 }
