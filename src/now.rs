@@ -90,7 +90,7 @@ fn current_zdt(tz: &str, fn_name: &str) -> TemporalZdt {
 ///
 /// Example: `SELECT temporal_now_instant();`
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(stable, parallel_safe, strict)]
 pub fn temporal_now_instant() -> Instant {
     let inst = Now::new(PgClock).instant().unwrap_or_else(|e| error!("temporal_now_instant: {e}"));
     Instant::from_temporal(&inst)
@@ -101,7 +101,7 @@ pub fn temporal_now_instant() -> Instant {
 ///
 /// Example: `SELECT temporal_now_zoneddatetime('America/New_York');`
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(stable, parallel_safe, strict)]
 pub fn temporal_now_zoneddatetime(tz: &str) -> ZonedDateTime {
     ZonedDateTime::from_temporal(&current_zdt(tz, "temporal_now_zoneddatetime"))
 }
@@ -114,7 +114,7 @@ pub fn temporal_now_zoneddatetime(tz: &str) -> ZonedDateTime {
 ///
 /// Example: `SELECT temporal_now_plaindatetime('Europe/Paris');`
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(stable, parallel_safe, strict)]
 pub fn temporal_now_plaindatetime(tz: &str) -> PlainDateTime {
     PlainDateTime::from_temporal(&current_zdt(tz, "temporal_now_plaindatetime").to_plain_date_time())
 }
@@ -124,7 +124,7 @@ pub fn temporal_now_plaindatetime(tz: &str) -> PlainDateTime {
 ///
 /// Example: `SELECT temporal_now_plaindate('America/New_York');`
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(stable, parallel_safe, strict)]
 pub fn temporal_now_plaindate(tz: &str) -> PlainDate {
     let pdt = current_zdt(tz, "temporal_now_plaindate").to_plain_date_time();
     PlainDate::from_temporal(&pdt.to_plain_date())
@@ -135,7 +135,7 @@ pub fn temporal_now_plaindate(tz: &str) -> PlainDate {
 ///
 /// Example: `SELECT temporal_now_plaintime('Asia/Tokyo');`
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(stable, parallel_safe, strict)]
 pub fn temporal_now_plaintime(tz: &str) -> PlainTime {
     let pdt = current_zdt(tz, "temporal_now_plaintime").to_plain_date_time();
     PlainTime::from_temporal(&pdt.to_plain_time())

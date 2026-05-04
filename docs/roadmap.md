@@ -27,22 +27,9 @@ No `PostgresHash` derive or hash support for any type. This means types cannot b
 **`alias_policy` GUC is registered but does nothing.**
 The setting is exposed to users but has no effect — timezone aliases are passed through to `temporal_rs` as-is regardless of the value. Misleading and production-dangerous.
 
-**Missing cross-type SQL casts.**
-Resolved: `time ↔ PlainTime` casts are registered. The other conversions (`ZonedDateTime → Instant`, `PlainDateTime → PlainDate`, `PlainDateTime → PlainTime`) are exposed as explicit SQL functions rather than casts — discarding context should be intentional at the call site. `ZonedDateTime → timestamptz` is handled by composing `zoneddatetime_to_instant()` with the existing `Instant::timestamptz` cast.
-
 **No binary send/recv functions.**
 Only text `in`/`out` are implemented. Without registered `send`/`recv` functions, `COPY ... (FORMAT binary)`, logical replication, and some client protocols fall back to slow text I/O.
 
-### Correctness / safety
-
-**Non-`strict` functions panic on NULL.**
-Most `#[pg_extern]` functions don't declare `strict`, so NULL inputs hit `unbox_arg_unchecked` and panic (uncontrolled abort) instead of raising a proper PostgreSQL error.
-
-**`stable` vs `immutable` misclassification.**
-`plaindate_year`, `plaindate_month`, and `plaindate_day` are marked `stable` but depend only on their input value — they should be `immutable`. Incorrect stability categories prevent the query optimizer from using indexes.
-
-**No NULL-handling tests.**
-All tests pass concrete values. No tests verify that NULL inputs propagate correctly through functions or that non-`strict` functions behave predictably.
 
 ### Production / deployment
 

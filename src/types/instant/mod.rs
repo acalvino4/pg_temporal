@@ -151,7 +151,7 @@ impl PgVarlenaInOutFuncs for Instant {
 ///
 /// Example: `SELECT make_instant('1609459200000000000');`
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_instant(epoch_ns: &str) -> Instant {
     let ns: i128 = epoch_ns.trim().parse().unwrap_or_else(|_| {
         error!("make_instant: invalid epoch_ns \"{epoch_ns}\": expected an integer")
@@ -167,7 +167,7 @@ pub fn make_instant(epoch_ns: &str) -> Instant {
 /// Returns the UTC epoch in nanoseconds as a text value (i128 has no native
 /// SQL type; use `::numeric` for arithmetic).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_epoch_ns(inst: Instant) -> String {
     inst.epoch_ns.to_string()
 }
@@ -202,7 +202,7 @@ impl Instant {
 /// Raises an error if the duration contains calendar components (years,
 /// months, weeks, or days) — those require a timezone to be meaningful.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_add(inst: Instant, dur: Duration) -> Instant {
     let result = inst
         .to_temporal()
@@ -216,7 +216,7 @@ pub fn instant_add(inst: Instant, dur: Duration) -> Instant {
 /// Raises an error if the duration contains calendar components (years,
 /// months, weeks, or days) — those require a timezone to be meaningful.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_subtract(inst: Instant, dur: Duration) -> Instant {
     let result = inst
         .to_temporal()
@@ -230,7 +230,7 @@ pub fn instant_subtract(inst: Instant, dur: Duration) -> Instant {
 /// expressed in seconds (the largest calendar-free unit), e.g. `PT7200S`
 /// for a 2-hour gap.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_since(inst: Instant, other: Instant) -> Duration {
     let d = inst
         .to_temporal()
@@ -244,7 +244,7 @@ pub fn instant_since(inst: Instant, other: Instant) -> Duration {
 /// expressed in seconds (the largest calendar-free unit), e.g. `PT7200S`
 /// for a 2-hour gap.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_until(inst: Instant, other: Instant) -> Duration {
     let d = inst
         .to_temporal()

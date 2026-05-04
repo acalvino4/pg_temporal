@@ -189,7 +189,7 @@ impl PgVarlenaInOutFuncs for PlainDateTime {
 /// ```
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_plaindatetime(
     year: i32,
     month: i32,
@@ -247,21 +247,21 @@ pub fn make_plaindatetime(
 
 /// Returns the calendar year (e.g. Persian 1403 for ISO 2025-03-01 with u-ca=persian).
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_year(pdt: PlainDateTime) -> i32 {
     pdt.to_temporal().year()
 }
 
 /// Returns the calendar month (1-indexed within the calendar system).
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_month(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.to_temporal().month())
 }
 
 /// Returns the calendar day-of-month.
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_day(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.to_temporal().day())
 }
@@ -270,49 +270,49 @@ pub fn plaindatetime_day(pdt: PlainDateTime) -> i32 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_hour(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.hour)
 }
 
 /// Returns the minute component (0–59).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_minute(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.minute)
 }
 
 /// Returns the second component (0–59).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_second(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.second)
 }
 
 /// Returns the millisecond component (0–999).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_millisecond(pdt: PlainDateTime) -> i32 {
     (pdt.subsecond_ns / 1_000_000) as i32
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_microsecond(pdt: PlainDateTime) -> i32 {
     ((pdt.subsecond_ns % 1_000_000) / 1_000) as i32
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_nanosecond(pdt: PlainDateTime) -> i32 {
     (pdt.subsecond_ns % 1_000) as i32
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_calendar(pdt: PlainDateTime) -> String {
     crate::cal_index::name_of(pdt.cal_idx)
         .unwrap_or_else(|| error!("plaindatetime_calendar: unknown calendar index {}", pdt.cal_idx))
@@ -380,7 +380,7 @@ impl PlainDateTime {
 /// Uses `Constrain` overflow: day-of-month is clamped to the last valid day
 /// (e.g., Jan 31 + P1M → Feb 28/29).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_add(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
     let result = pdt
         .to_temporal()
@@ -392,7 +392,7 @@ pub fn plaindatetime_add(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
 /// Subtract a duration from a plain datetime.
 /// Uses `Constrain` overflow: day-of-month is clamped to the last valid day.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_subtract(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
     let result = pdt
         .to_temporal()
@@ -403,7 +403,7 @@ pub fn plaindatetime_subtract(pdt: PlainDateTime, dur: Duration) -> PlainDateTim
 
 /// Returns the duration elapsed from `other` to `pdt` (default unit: days).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_since(pdt: PlainDateTime, other: PlainDateTime) -> Duration {
     let d = pdt
         .to_temporal()
@@ -414,7 +414,7 @@ pub fn plaindatetime_since(pdt: PlainDateTime, other: PlainDateTime) -> Duration
 
 /// Returns the duration from `pdt` to `other` (default unit: days).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_until(pdt: PlainDateTime, other: PlainDateTime) -> Duration {
     let d = pdt
         .to_temporal()

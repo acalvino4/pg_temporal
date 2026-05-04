@@ -247,3 +247,32 @@ fn pym_make_calendar_stored() {
 fn pym_make_invalid_month_errors() {
     Spi::get_one::<String>("SELECT make_plainyearmonth(2025, 13)::text").unwrap();
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn pym_null_propagates_through_accessor() {
+    let r = Spi::get_one::<i32>("SELECT plainyearmonth_year(NULL::temporal.plainyearmonth)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL first arg returns NULL.
+#[pg_test]
+fn pym_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plainyearmonth_add(NULL::temporal.plainyearmonth, 'P1M'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL second arg returns NULL.
+#[pg_test]
+fn pym_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plainyearmonth_add(make_plainyearmonth(2025, 1), NULL::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}

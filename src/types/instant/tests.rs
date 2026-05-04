@@ -361,3 +361,32 @@ fn pg_cast_instant_to_timestamptz_pre_pg_epoch_sub_micro_truncated() {
         "expected truncation toward zero to PG epoch (946684800000000000), got: {ns}"
     );
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn instant_null_propagates_through_accessor() {
+    let r = Spi::get_one::<String>("SELECT instant_epoch_ns(NULL::temporal.instant)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL instant returns NULL.
+#[pg_test]
+fn instant_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT instant_add(NULL::temporal.instant, 'PT1H'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL duration returns NULL.
+#[pg_test]
+fn instant_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT instant_add('1970-01-01T00:00:00Z'::temporal.instant, NULL::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}

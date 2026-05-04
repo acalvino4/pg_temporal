@@ -564,3 +564,44 @@ fn zdt_instant_zdt_roundtrip() {
     .unwrap();
     assert!(ok);
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn zdt_null_propagates_through_accessor() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoneddatetime_timezone(NULL::temporal.zoneddatetime)",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL first arg returns NULL.
+#[pg_test]
+fn zdt_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoneddatetime_add(NULL::temporal.zoneddatetime, 'PT1H'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL second arg returns NULL.
+#[pg_test]
+fn zdt_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT zoneddatetime_add(
+            '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
+            NULL::temporal.duration
+        )::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// `temporal_now_zoneddatetime` returns NULL when the timezone arg is NULL.
+#[pg_test]
+fn zdt_now_null_tz_returns_null() {
+    let r = Spi::get_one::<String>("SELECT temporal_now_zoneddatetime(NULL::text)::text");
+    assert_eq!(r.unwrap(), None);
+}

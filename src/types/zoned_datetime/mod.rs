@@ -193,7 +193,7 @@ impl PgVarlenaInOutFuncs for ZonedDateTime {
 /// SELECT make_zoneddatetime('1609459200000000000', 'America/New_York', 'iso8601');
 /// ```
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_zoneddatetime(epoch_ns: &str, tz: &str, cal: &str) -> ZonedDateTime {
     let ns: i128 = epoch_ns.trim().parse().unwrap_or_else(|_| {
         error!("make_zoneddatetime: invalid epoch_ns \"{epoch_ns}\": expected an integer")
@@ -219,7 +219,7 @@ pub fn make_zoneddatetime(epoch_ns: &str, tz: &str, cal: &str) -> ZonedDateTime 
 
 /// Returns the timezone name stored with this value.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_timezone(zdt: ZonedDateTime) -> String {
     let tz_idx = zdt.tz_idx;
     crate::tz_index::name_of(tz_idx)
@@ -229,7 +229,7 @@ pub fn zoneddatetime_timezone(zdt: ZonedDateTime) -> String {
 
 /// Returns the calendar name stored with this value.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_calendar(zdt: ZonedDateTime) -> String {
     let cal_idx = zdt.cal_idx;
     crate::cal_index::name_of(cal_idx)
@@ -240,7 +240,7 @@ pub fn zoneddatetime_calendar(zdt: ZonedDateTime) -> String {
 /// Returns the UTC epoch in nanoseconds as a text value (i128 has no native
 /// SQL type; use `::numeric` for arithmetic).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_epoch_ns(zdt: ZonedDateTime) -> String {
     let ns = zdt.epoch_ns;
     ns.to_string()
@@ -296,7 +296,7 @@ impl ZonedDateTime {
 /// Uses `Constrain` overflow and the compiled IANA TZDB for DST-aware
 /// wall-clock arithmetic.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_add(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
     let result = zdt
         .to_temporal()
@@ -309,7 +309,7 @@ pub fn zoneddatetime_add(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
 /// Uses `Constrain` overflow and the compiled IANA TZDB for DST-aware
 /// wall-clock arithmetic.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_subtract(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
     let result = zdt
         .to_temporal()
@@ -320,7 +320,7 @@ pub fn zoneddatetime_subtract(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTim
 
 /// Returns the duration elapsed from `other` to `zdt` (default unit: hours).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_since(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
     let d = zdt
         .to_temporal()
@@ -331,7 +331,7 @@ pub fn zoneddatetime_since(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration
 
 /// Returns the duration from `zdt` to `other` (default unit: hours).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn zoneddatetime_until(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
     let d = zdt
         .to_temporal()

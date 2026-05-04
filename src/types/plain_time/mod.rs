@@ -180,7 +180,7 @@ impl PgVarlenaInOutFuncs for PlainTime {
 /// ```
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_plaintime(
     hour: i32,
     minute: i32,
@@ -216,42 +216,42 @@ pub fn make_plaintime(
 /// Returns the hour component (0–23).
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_hour(pt: PlainTime) -> i32 {
     i32::from(pt.hour)
 }
 
 /// Returns the minute component (0–59).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_minute(pt: PlainTime) -> i32 {
     i32::from(pt.minute)
 }
 
 /// Returns the second component (0–59).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_second(pt: PlainTime) -> i32 {
     i32::from(pt.second)
 }
 
 /// Returns the millisecond component (0–999).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_millisecond(pt: PlainTime) -> i32 {
     (pt.subsecond_ns / 1_000_000) as i32
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_microsecond(pt: PlainTime) -> i32 {
     ((pt.subsecond_ns % 1_000_000) / 1_000) as i32
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_nanosecond(pt: PlainTime) -> i32 {
     (pt.subsecond_ns % 1_000) as i32
 }
@@ -290,7 +290,7 @@ impl PlainTime {
 
 /// Add a duration to a plain time. Wraps around midnight.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_add(pt: PlainTime, dur: Duration) -> PlainTime {
     let result = pt
         .to_temporal()
@@ -301,7 +301,7 @@ pub fn plaintime_add(pt: PlainTime, dur: Duration) -> PlainTime {
 
 /// Subtract a duration from a plain time. Wraps around midnight.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_subtract(pt: PlainTime, dur: Duration) -> PlainTime {
     let result = pt
         .to_temporal()
@@ -312,7 +312,7 @@ pub fn plaintime_subtract(pt: PlainTime, dur: Duration) -> PlainTime {
 
 /// Returns the duration elapsed from `other` to `pt`.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_since(pt: PlainTime, other: PlainTime) -> Duration {
     let d = pt
         .to_temporal()
@@ -323,7 +323,7 @@ pub fn plaintime_since(pt: PlainTime, other: PlainTime) -> Duration {
 
 /// Returns the duration from `pt` to `other`.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_until(pt: PlainTime, other: PlainTime) -> Duration {
     let d = pt
         .to_temporal()

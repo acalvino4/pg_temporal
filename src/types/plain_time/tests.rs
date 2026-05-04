@@ -368,3 +368,32 @@ fn pg_cast_time_to_plaintime_end_of_day() {
     .unwrap();
     assert!(r.starts_with("23:59:59"), "got: {r}");
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn pt_null_propagates_through_accessor() {
+    let r = Spi::get_one::<i32>("SELECT plaintime_hour(NULL::temporal.plaintime)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL first arg returns NULL.
+#[pg_test]
+fn pt_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaintime_add(NULL::temporal.plaintime, 'PT1H'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL second arg returns NULL.
+#[pg_test]
+fn pt_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaintime_add('12:00:00'::temporal.plaintime, NULL::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}

@@ -188,7 +188,7 @@ impl PgVarlenaInOutFuncs for PlainMonthDay {
 /// SELECT make_plainmonthday(2, 29);  -- Feb 29 (leap day)
 /// ```
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_plainmonthday(
     month: i32,
     day: i32,
@@ -217,7 +217,7 @@ pub fn make_plainmonthday(
 /// month number; the ISO field is always accessible since `pmd.iso` is public.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainmonthday_month(pmd: PlainMonthDay) -> i32 {
     i32::from(pmd.month)
 }
@@ -225,14 +225,14 @@ pub fn plainmonthday_month(pmd: PlainMonthDay) -> i32 {
 /// Returns the ISO day-of-month.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainmonthday_day(pmd: PlainMonthDay) -> i32 {
     i32::from(pmd.day)
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainmonthday_calendar(pmd: PlainMonthDay) -> String {
     crate::cal_index::name_of(pmd.cal_idx)
         .unwrap_or_else(|| {

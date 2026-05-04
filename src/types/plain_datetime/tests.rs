@@ -650,3 +650,32 @@ fn plaintime_to_plaindatetime_uses_date_calendar() {
     .unwrap();
     assert_eq!(cal, "japanese");
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn pdt_null_propagates_through_accessor() {
+    let r = Spi::get_one::<i32>("SELECT plaindatetime_hour(NULL::temporal.plaindatetime)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL first arg returns NULL.
+#[pg_test]
+fn pdt_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindatetime_add(NULL::temporal.plaindatetime, 'PT1H'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL second arg returns NULL.
+#[pg_test]
+fn pdt_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindatetime_add('2025-01-01T00:00:00'::temporal.plaindatetime, NULL::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}

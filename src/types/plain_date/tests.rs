@@ -434,3 +434,32 @@ fn pd_to_plaindatetime_preserves_calendar() {
     .unwrap();
     assert_eq!(cal, "japanese");
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn pd_null_propagates_through_accessor() {
+    let r = Spi::get_one::<i32>("SELECT plaindate_year(NULL::temporal.plaindate)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL first arg returns NULL.
+#[pg_test]
+fn pd_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindate_add(NULL::temporal.plaindate, 'P1D'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL second arg returns NULL.
+#[pg_test]
+fn pd_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindate_add('2025-01-01'::temporal.plaindate, NULL::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}

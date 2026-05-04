@@ -586,3 +586,41 @@ fn pg_cast_negative_duration_to_interval_roundtrip() {
 fn pg_cast_duration_to_interval_overflow_months_rejected() {
     Spi::run("SELECT 'P200000000Y'::temporal.duration::interval").unwrap();
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn dur_null_propagates_through_accessor() {
+    let r = Spi::get_one::<i64>("SELECT duration_years(NULL::temporal.duration)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL first arg returns NULL.
+#[pg_test]
+fn dur_null_propagates_first_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_add(NULL::temporal.duration, 'PT1H'::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// Arithmetic with a NULL second arg returns NULL.
+#[pg_test]
+fn dur_null_propagates_second_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_add('PT1H'::temporal.duration, NULL::temporal.duration)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}
+
+/// `duration_round` returns NULL when the unit string arg is NULL.
+#[pg_test]
+fn dur_null_propagates_unit_arg() {
+    let r = Spi::get_one::<String>(
+        "SELECT duration_round('PT1H'::temporal.duration, NULL::text)::text",
+    );
+    assert_eq!(r.unwrap(), None);
+}

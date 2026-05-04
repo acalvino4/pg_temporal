@@ -167,7 +167,7 @@ impl PgVarlenaInOutFuncs for PlainDate {
 /// SELECT make_plaindate(2025, 6, 15, 'persian');
 /// ```
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_plaindate(
     year: i32,
     month: i32,
@@ -194,28 +194,28 @@ pub fn make_plaindate(
 
 /// Returns the calendar year (e.g. Persian 1403 for ISO 2025-03-01 with u-ca=persian).
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_year(pd: PlainDate) -> i32 {
     pd.to_temporal().year()
 }
 
 /// Returns the calendar month (1-indexed within the calendar system).
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_month(pd: PlainDate) -> i32 {
     i32::from(pd.to_temporal().month())
 }
 
 /// Returns the calendar day-of-month.
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_day(pd: PlainDate) -> i32 {
     i32::from(pd.to_temporal().day())
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_calendar(pd: PlainDate) -> String {
     crate::cal_index::name_of(pd.cal_idx)
         .unwrap_or_else(|| error!("plaindate_calendar: unknown calendar index {}", pd.cal_idx))
@@ -265,7 +265,7 @@ impl PlainDate {
 /// Add a duration to a plain date.
 /// Uses `Constrain` overflow: day-of-month is clamped to the last valid day.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_add(pd: PlainDate, dur: Duration) -> PlainDate {
     let result = pd
         .to_temporal()
@@ -277,7 +277,7 @@ pub fn plaindate_add(pd: PlainDate, dur: Duration) -> PlainDate {
 /// Subtract a duration from a plain date.
 /// Uses `Constrain` overflow: day-of-month is clamped to the last valid day.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_subtract(pd: PlainDate, dur: Duration) -> PlainDate {
     let result = pd
         .to_temporal()
@@ -288,7 +288,7 @@ pub fn plaindate_subtract(pd: PlainDate, dur: Duration) -> PlainDate {
 
 /// Returns the duration elapsed from `other` to `pd` (default unit: days).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_since(pd: PlainDate, other: PlainDate) -> Duration {
     let d = pd
         .to_temporal()
@@ -299,7 +299,7 @@ pub fn plaindate_since(pd: PlainDate, other: PlainDate) -> Duration {
 
 /// Returns the duration from `pd` to `other` (default unit: days).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindate_until(pd: PlainDate, other: PlainDate) -> Duration {
     let d = pd
         .to_temporal()
@@ -362,13 +362,14 @@ extension_sql!(
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
 pub fn plaindate_to_plaindatetime(
-    pd: PlainDate,
+    pd: Option<PlainDate>,
     pt: default!(Option<PlainTime>, "NULL"),
-) -> PlainDateTime {
+) -> Option<PlainDateTime> {
+    let pd = pd?;
     let temporal_time = pt.map(|t| t.to_temporal());
     let result = pd
         .to_temporal()
         .to_plain_date_time(temporal_time)
         .unwrap_or_else(|e| error!("plaindate_to_plaindatetime failed: {e}"));
-    PlainDateTime::from_temporal(&result)
+    Some(PlainDateTime::from_temporal(&result))
 }

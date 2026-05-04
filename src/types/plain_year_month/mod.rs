@@ -165,7 +165,7 @@ impl PgVarlenaInOutFuncs for PlainYearMonth {
 /// SELECT make_plainyearmonth(2025, 3, 'persian');
 /// ```
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_plainyearmonth(
     year: i32,
     month: i32,
@@ -189,21 +189,21 @@ pub fn make_plainyearmonth(
 
 /// Returns the calendar year.
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_year(pym: PlainYearMonth) -> i32 {
     pym.to_temporal().year()
 }
 
 /// Returns the calendar month (1-indexed).
 #[must_use]
-#[pg_extern(stable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_month(pym: PlainYearMonth) -> i32 {
     i32::from(pym.to_temporal().month())
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_calendar(pym: PlainYearMonth) -> String {
     crate::cal_index::name_of(pym.cal_idx)
         .unwrap_or_else(|| {
@@ -267,7 +267,7 @@ impl PlainYearMonth {
 /// will cause an error per the Temporal spec.
 /// Uses `Constrain` overflow.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_add(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth {
     let result = pym
         .to_temporal()
@@ -280,7 +280,7 @@ pub fn plainyearmonth_add(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth 
 /// Only years and months components are accepted.
 /// Uses `Constrain` overflow.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_subtract(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth {
     let result = pym
         .to_temporal()
@@ -291,7 +291,7 @@ pub fn plainyearmonth_subtract(pym: PlainYearMonth, dur: Duration) -> PlainYearM
 
 /// Returns the duration elapsed from `other` to `pym` (default unit: months).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_since(pym: PlainYearMonth, other: PlainYearMonth) -> Duration {
     let d = pym
         .to_temporal()
@@ -302,7 +302,7 @@ pub fn plainyearmonth_since(pym: PlainYearMonth, other: PlainYearMonth) -> Durat
 
 /// Returns the duration from `pym` to `other` (default unit: months).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainyearmonth_until(pym: PlainYearMonth, other: PlainYearMonth) -> Duration {
     let d = pym
         .to_temporal()

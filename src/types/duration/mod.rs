@@ -164,7 +164,7 @@ impl PgVarlenaInOutFuncs for Duration {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_years(d: Duration) -> i64 {
     d.years
 }
@@ -173,7 +173,7 @@ pub fn duration_years(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_months(d: Duration) -> i64 {
     d.months
 }
@@ -182,7 +182,7 @@ pub fn duration_months(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_weeks(d: Duration) -> i64 {
     d.weeks
 }
@@ -191,7 +191,7 @@ pub fn duration_weeks(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_days(d: Duration) -> i64 {
     d.days
 }
@@ -200,7 +200,7 @@ pub fn duration_days(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_hours(d: Duration) -> i64 {
     d.hours
 }
@@ -209,7 +209,7 @@ pub fn duration_hours(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_minutes(d: Duration) -> i64 {
     d.minutes
 }
@@ -218,7 +218,7 @@ pub fn duration_minutes(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_seconds(d: Duration) -> i64 {
     d.seconds
 }
@@ -227,7 +227,7 @@ pub fn duration_seconds(d: Duration) -> i64 {
 // pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_milliseconds(d: Duration) -> i64 {
     d.milliseconds
 }
@@ -235,7 +235,7 @@ pub fn duration_milliseconds(d: Duration) -> i64 {
 /// Returns the microseconds component as text (i128 has no native SQL type;
 /// use `::numeric` for arithmetic).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_microseconds(d: Duration) -> String {
     let us = d.microseconds;
     us.to_string()
@@ -244,7 +244,7 @@ pub fn duration_microseconds(d: Duration) -> String {
 /// Returns the nanoseconds component as text (i128 has no native SQL type;
 /// use `::numeric` for arithmetic).
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_nanoseconds(d: Duration) -> String {
     let ns = d.nanoseconds;
     ns.to_string()
@@ -296,14 +296,14 @@ impl Duration {
 
 /// Returns a copy with the sign of every component flipped.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_negated(d: Duration) -> Duration {
     Duration::from_temporal(&d.to_temporal().negated())
 }
 
 /// Returns a copy with all components made non-negative.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_abs(d: Duration) -> Duration {
     Duration::from_temporal(&d.to_temporal().abs())
 }
@@ -313,7 +313,7 @@ pub fn duration_abs(d: Duration) -> Duration {
 /// A valid duration has uniform sign (all non-zero components share the same
 /// sign), so the overall sign equals the sign of the first non-zero field.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_sign(d: Duration) -> i32 {
     for v in [d.years, d.months, d.weeks, d.days, d.hours, d.minutes, d.seconds, d.milliseconds] {
         if v != 0 {
@@ -331,7 +331,7 @@ pub fn duration_sign(d: Duration) -> i32 {
 /// Returns true if all components of the duration are zero.
 /// Equivalent to Temporal's `Duration.blank`.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_is_zero(d: Duration) -> bool {
     duration_sign(d) == 0
 }
@@ -355,7 +355,7 @@ const fn has_calendar_components(d: Duration) -> bool {
 /// months, weeks, or days) — use `plaindatetime_add` or `zoneddatetime_add`
 /// to add durations that include calendar components.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_add(a: Duration, b: Duration) -> Duration {
     if has_calendar_components(a) || has_calendar_components(b) {
         error!(
@@ -379,7 +379,7 @@ pub fn duration_add(a: Duration, b: Duration) -> Duration {
 /// `zoneddatetime_subtract` to subtract durations that include calendar
 /// components.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_subtract(a: Duration, b: Duration) -> Duration {
     if has_calendar_components(a) || has_calendar_components(b) {
         error!(
@@ -407,7 +407,7 @@ pub fn duration_subtract(a: Duration, b: Duration) -> Duration {
 /// `smallest_unit` is a Temporal unit string: `'hour'`, `'minute'`,
 /// `'second'`, `'millisecond'`, `'microsecond'`, or `'nanosecond'`.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_round(d: Duration, smallest_unit: &str) -> Duration {
     let unit = Unit::from_str(smallest_unit)
         .unwrap_or_else(|_| error!("duration_round: invalid unit \"{smallest_unit}\""));
@@ -426,7 +426,7 @@ pub fn duration_round(d: Duration, smallest_unit: &str) -> Duration {
 /// weeks, or days), or when DST-aware day-length is relevant.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_round_zoned(
     d: Duration,
     smallest_unit: &str,
@@ -450,7 +450,7 @@ pub fn duration_round_zoned(
 /// weeks, or days) when timezone-aware day-length is not needed.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_round_plain(
     d: Duration,
     smallest_unit: &str,
@@ -481,7 +481,7 @@ pub fn duration_round_plain(
 ///
 /// `unit` is a Temporal unit string: `'hour'`, `'minute'`, `'second'`, etc.
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_total(d: Duration, unit: &str) -> f64 {
     let u =
         Unit::from_str(unit).unwrap_or_else(|_| error!("duration_total: invalid unit \"{unit}\""));
@@ -495,7 +495,7 @@ pub fn duration_total(d: Duration, unit: &str) -> f64 {
 /// `ZonedDateTime` for DST-aware day/month/year lengths.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_total_zoned(d: Duration, unit: &str, relative_to: ZonedDateTime) -> f64 {
     let u = Unit::from_str(unit)
         .unwrap_or_else(|_| error!("duration_total_zoned: invalid unit \"{unit}\""));
@@ -510,7 +510,7 @@ pub fn duration_total_zoned(d: Duration, unit: &str, relative_to: ZonedDateTime)
 /// `PlainDateTime` for calendar-aware month/year lengths.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_total_plain(d: Duration, unit: &str, relative_to: PlainDateTime) -> f64 {
     let u = Unit::from_str(unit)
         .unwrap_or_else(|_| error!("duration_total_plain: invalid unit \"{unit}\""));
@@ -537,7 +537,7 @@ pub fn duration_total_plain(d: Duration, unit: &str, relative_to: PlainDateTime)
 /// `duration_round_zoned` afterwards to balance to larger units if required.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_add_zoned(a: Duration, b: Duration, relative_to: ZonedDateTime) -> Duration {
     let zdt_start = relative_to.to_temporal();
     let zdt_after_a = zdt_start
@@ -558,7 +558,7 @@ pub fn duration_add_zoned(a: Duration, b: Duration, relative_to: ZonedDateTime) 
 /// datetime.  DST transitions are respected.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_subtract_zoned(a: Duration, b: Duration, relative_to: ZonedDateTime) -> Duration {
     let zdt_start = relative_to.to_temporal();
     let zdt_after_a = zdt_start
@@ -580,7 +580,7 @@ pub fn duration_subtract_zoned(a: Duration, b: Duration, relative_to: ZonedDateT
 /// lengths are not needed.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_add_plain(a: Duration, b: Duration, relative_to: PlainDateTime) -> Duration {
     let pdt_start = relative_to.to_temporal();
     let pdt_after_a = pdt_start
@@ -601,7 +601,7 @@ pub fn duration_add_plain(a: Duration, b: Duration, relative_to: PlainDateTime) 
 /// datetime.
 #[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
 #[must_use]
-#[pg_extern(immutable, parallel_safe)]
+#[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_subtract_plain(a: Duration, b: Duration, relative_to: PlainDateTime) -> Duration {
     let pdt_start = relative_to.to_temporal();
     let pdt_after_a = pdt_start

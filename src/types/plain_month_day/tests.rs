@@ -209,3 +209,23 @@ fn pmd_make_feb29_valid() {
 fn pmd_make_invalid_day_errors() {
     Spi::get_one::<String>("SELECT make_plainmonthday(2, 30)::text").unwrap();
 }
+
+// -----------------------------------------------------------------------
+// NULL propagation (strict semantics)
+// -----------------------------------------------------------------------
+
+/// An accessor receiving NULL returns NULL.
+#[pg_test]
+fn pmd_null_propagates_through_accessor() {
+    let r = Spi::get_one::<i32>("SELECT plainmonthday_month(NULL::temporal.plainmonthday)");
+    assert_eq!(r.unwrap(), None);
+}
+
+/// A second accessor receiving NULL returns NULL.
+#[pg_test]
+fn pmd_null_propagates_day_accessor() {
+    let r = Spi::get_one::<i32>(
+        "SELECT plainmonthday_day(NULL::temporal.plainmonthday)",
+    );
+    assert_eq!(r.unwrap(), None);
+}
