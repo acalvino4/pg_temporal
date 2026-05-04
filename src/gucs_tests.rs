@@ -87,24 +87,3 @@ fn guc_disambiguation_reject_errors_on_ambiguous_time() {
     )
     .unwrap();
 }
-
-// -----------------------------------------------------------------------
-// alias_policy — valid values
-// -----------------------------------------------------------------------
-
-#[pg_test]
-fn guc_alias_policy_iana_is_valid() {
-    Spi::run("SET LOCAL pg_temporal.alias_policy = 'iana'").unwrap();
-}
-
-#[pg_test]
-fn guc_alias_policy_jodatime_is_valid() {
-    Spi::run("SET LOCAL pg_temporal.alias_policy = 'jodatime'").unwrap();
-}
-
-/// An unrecognized alias_policy value must be rejected at SET time.
-#[pg_test]
-#[should_panic]
-fn guc_alias_policy_invalid_value_rejected() {
-    Spi::run("SET LOCAL pg_temporal.alias_policy = 'typo'").unwrap();
-}

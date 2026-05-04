@@ -40,7 +40,7 @@ Output always includes the UTC offset, IANA annotation, and (for non-ISO calenda
 
 ### `zoneddatetime_timezone(zdt zoneddatetime) → text`
 
-Returns the IANA timezone identifier stored with the value. The identifier is stored as-is from the input string; alias resolution via `pg_temporal.alias_policy` is not yet active (see below).
+Returns the IANA timezone identifier stored with the value.
 
 ```sql
 SELECT zoneddatetime_timezone(
@@ -73,8 +73,6 @@ SELECT zoneddatetime_epoch_ns(
 
 ## Configuration
 
-Both GUCs are registered under `pg_temporal`.
-
 ### `pg_temporal.default_disambiguation`
 
 Controls how a wall-clock time falling in a DST gap or fold is resolved. Settable per-session with `SET`.
@@ -89,17 +87,6 @@ Controls how a wall-clock time falling in a DST gap or fold is resolved. Settabl
 ```sql
 SET pg_temporal.default_disambiguation = 'reject';
 ```
-
-### `pg_temporal.alias_policy`
-
-> **Not yet active.** This GUC is registered and settable, but timezone identifiers are currently passed through to `temporal_rs` as-is regardless of this setting. Alias resolution will be implemented in a future release.
-
-Controls timezone alias resolution at insert time. Requires superuser (`ALTER SYSTEM` / `ALTER DATABASE`).
-
-| Value            | Behavior                        |
-| ---------------- | ------------------------------- |
-| `iana` (default) | Resolve to IANA canonical names |
-| `jodatime`       | Resolve using JodaTime aliases  |
 
 ## Identity equality
 
@@ -174,7 +161,7 @@ SELECT zoneddatetime_since(
 
 ## Multi-calendar support
 
-All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The instant is always stored as epoch nanoseconds; the calendar name is stored in the catalog alongside the timezone. `zoneddatetime_calendar` returns the stored calendar name; non-ISO annotations are preserved on output.
+All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The instant is always stored as epoch nanoseconds; the calendar is stored as a compact generated index alongside the timezone index. `zoneddatetime_calendar` returns the stored calendar name; non-ISO annotations are preserved on output.
 
 ```sql
 -- Japanese calendar annotation round-trips

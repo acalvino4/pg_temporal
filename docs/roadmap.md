@@ -5,7 +5,7 @@
 | Phase                                     | Status   |
 | ----------------------------------------- | -------- |
 | Scaffold + environment                    | complete |
-| Catalog tables + `zoneddatetime`          | complete |
+| `zoneddatetime` + compile-time indices    | complete |
 | `instant`, `plaindatetime`, `duration`    | complete |
 | Multi-calendar support                    | complete |
 | Constructor functions                     | complete |
@@ -15,18 +15,8 @@
 | Arithmetic + comparison operators         | complete |
 | `plaindate`, `plaintime`, `plainyearmonth`, `plainmonthday`       | complete |
 | Explicit casts from native PG types       | complete |
-| `ALIAS_POLICY` GUC resolution             | complete |
 
 ## Infrastructure / productionization gaps
-
-### High-impact functional gaps
-
-~~**No hash operator class.**~~
-Hash operator classes are now implemented for all seven comparable types (`Instant`, `ZonedDateTime`, `PlainDateTime`, `PlainDate`, `PlainTime`, `PlainYearMonth`, `PlainMonthDay`). `Duration` is excluded — it has no `Eq` by design. `PlainMonthDay` uses a manual `Hash` impl to stay consistent with its custom `PartialEq` (which excludes `iso_year`).
-
-**`alias_policy` GUC is registered but does nothing.**
-The setting is exposed to users but has no effect — timezone aliases are passed through to `temporal_rs` as-is regardless of the value. Misleading and production-dangerous.
-
 
 ### Production / deployment
 
@@ -47,14 +37,8 @@ No `META.json`, no pre-built binaries, no release automation. `cargo pgrx packag
 
 ### Lower priority
 
-**`Duration` has no comparison operators.**
-Correct per Temporal semantics: `<`, `>` etc. are not defined for durations in the spec (they throw in JS too). Instead, use `duration_compare(a, b)` for time-only or day-only durations, or `duration_compare_zoned(a, b, relative_to)` / `duration_compare_plain(a, b, relative_to)` when either duration contains calendar components (years, months, weeks). These mirror `Temporal.Duration.compare()`. `ORDER BY` on a duration column is not supported.
-
 **`pg18` hardcoded as default Cargo feature.**
 `default = ["pg18"]` means missing `--features` silently targets PG18 — a footgun if PG16/17 support is added later.
 
 **Only PostgreSQL 18 is supported.**
 No `pg16`/`pg17` feature flags. Locks out any production database not on PG18. A production extension typically supports the last 3+ major versions.
-
-**Spec.md is outdated.**
-Describes `pg_temporal.timezone_catalog` and `pg_temporal.calendar_catalog` SQL tables that don't exist; the implementation uses compile-time arrays instead.

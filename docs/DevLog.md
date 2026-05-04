@@ -62,7 +62,7 @@ src/
 `timezone_catalog` and `calendar_catalog` are created via pgrx's `extension_sql!` macro with `bootstrap = true`, ensuring they exist before the `ZonedDateTime` type's in/out functions are ever called. The ISO 8601 calendar is seeded at install time (always `calendar_oid = 1`).
 
 **GUCs as string GUCs**
-`pg_temporal.default_disambiguation` and `pg_temporal.alias_policy` are registered as `GucSetting<Option<CString>>` string GUCs. An enum GUC would require implementing `#[derive(PostgresGucEnum)]` on a local wrapper type; the string GUC is equally expressive and avoids the extra indirection for Phase 2.
+Phase 2 originally used string GUCs during the first implementation pass. The current design keeps only `pg_temporal.default_disambiguation`; later cleanup removed the extra non-Temporal configuration that never became real behavior.
 
 **`#[derive(PostgresType)] #[inoutfuncs]` for ZonedDateTime**
 pgrx's `#[inoutfuncs]` attribute wires up the `InOutFuncs` trait, letting us implement custom IXDTF (RFC 9557) text I/O while pgrx handles varlena storage and serde-based binary send/recv automatically.

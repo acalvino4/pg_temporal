@@ -1,112 +1,110 @@
 Postgres Temporal Extension — Spec
 
-1. What
+## 1. What
 
-A Postgres extension implementing full Temporal-compliant date/time types, aligned with Temporal API, NodaTime/JodaTime semantics, and IANA tzdb rules.
+`pg_temporal` is a PostgreSQL extension that exposes Temporal-style date/time types in the `temporal` schema, backed by Rust (`pgrx`) and `temporal_rs`.
 
-Core features:
+Current SQL types:
 
-Types:
+- `temporal.zoneddatetime` — timezone-aware datetime (`instant + IANA zone + calendar`)
+- `temporal.instant` — absolute UTC instant
+- `temporal.plaindatetime` — calendar-local datetime
+- `temporal.plaindate` — calendar-local date
+- `temporal.plaintime` — wall-clock time
+- `temporal.plainyearmonth` — calendar-local year/month
+- `temporal.plainmonthday` — calendar-local month/day
+- `temporal.duration` — full vector duration (`years` through `nanoseconds`)
 
-temporal.zoneddatetime — timezone-aware datetime
+The SQL surface is functions-first: constructors, accessors, arithmetic, comparisons where Temporal semantics allow them, explicit casts from native PostgreSQL types, and `now()` helpers.
 
-temporal.instant — absolute UTC instant
+## 2. Why
 
-temporal.plaindatetime — calendar-local datetime
+PostgreSQL's native date/time types are useful, but they do not model the same semantics as Temporal:
 
-temporal.duration — full vector durations (calendar + exact)
+- no first-class IANA timezone identity on values
+- no calendar-aware local types
+- no Temporal-style duration model
+- no nanosecond precision
+- no explicit disambiguation model for DST gaps/folds
 
-Functions: Constructors, arithmetic, conversions, disambiguation handling
+`pg_temporal` exists to preserve Temporal semantics at the database layer so applications do not lose correctness when values cross the SQL boundary.
 
-Cluster-wide configuration: TZDB version, aliasing behavior, default disambiguation
+## 3. Guiding Principles
 
-SQL-first integration: Explicit conversions; indexable, filterable, and sortable
+- Correctness before convenience.
+- Temporal-compatible semantics where `temporal_rs` provides them.
+- Explicit conversions only; avoid surprising implicit casts.
+- Nanosecond precision throughout.
+- Functions-first SQL API, with operators added only where the semantics are well-defined.
+- Compact binary storage rather than text or self-describing encodings.
 
-Implementation framework: Rust + pgrx for Postgres extension development; temporal_rs crate for core Temporal logic
+## 4. Current Implementation Model
 
-2. Why
+### Implementation framework
 
-Spec compliance: Fully matches Temporal, nanosecond precision, calendar semantics, identity equality
+- Rust + `pgrx` for PostgreSQL integration
+- `temporal_rs` for Temporal semantics
+- `timezone_provider` with compiled TZDB data
 
-Deterministic scheduling: DST changes, ambiguous times, global timezones handled automatically
+### Timezone and calendar identifiers
 
-Unified Temporal model in Postgres: Replaces inconsistent timestamp/timestamptz usage for timezone-aware applications
+The implementation does not use SQL catalog tables for timezone or calendar lookup.
 
-Future-proof: Supports multiple calendars, Temporal-style durations, and cluster-wide configuration
+Instead, identifiers are stored as compact indices backed by compile-time generated arrays:
 
-3. Guiding Principles
+- `src/tz_index.rs` includes a generated append-only canonical IANA timezone list
+- `src/cal_index.rs` includes a generated calendar identifier list
+- write path: string identifier -> compact index via binary search
+- read path: compact index -> string identifier via direct array lookup
 
-Correctness first: Full Temporal semantics, DST, and disambiguation handled natively
+Timezone rules are resolved through a single process-wide compiled TZDB provider. No runtime timezone catalog tables or runtime tzdata files are required.
 
-Identity equality: ZonedDateTime equality includes local datetime, zone, and calendar
+### On-disk storage
 
-Explicit conversions only: No implicit casting from native types
+All Temporal types use compact binary `PgVarlena<T>` storage rather than pgrx's default CBOR/serde path.
 
-Cluster-wide determinism: All configuration uniform across cluster
+Representative layouts:
 
-Temporal-compliant durations: Preserve full vector structure for exact and calendar durations
+- `ZonedDateTime { epoch_ns: i128, tz_idx: u16, cal_idx: u8 }`
+- `Instant { epoch_ns: i128 }`
+- local calendar-bearing types store their calendar as `cal_idx`
+- `Duration` stores the full Temporal vector without normalization
 
-Functions-first SQL interface: Operators added later if justified
+This keeps storage fixed-width where possible and preserves exact Temporal data instead of flattening it into PostgreSQL-native timestamp forms.
 
-Strict parsing and serialization: RFC-compliant literals and custom binary layouts
+## 5. Semantics
 
-Performance secondary to correctness: OID-based zone storage, nanosecond precision
+### Equality and ordering
 
-4. High-Level Technical / Implementation Decisions
-   Decision Choice / Implementation
-   Implementation Framework Rust, using pgrx for Postgres integration; temporal_rs crate for Temporal logic
-   Equality Identity equality for ZonedDateTime
-   Ordering Primary: instant; tie-breaker: zone OID / calendar OID lexicographically
-   Duration Full vector storage (years → nanoseconds), no normalization
-   Disambiguation Default "compatible"; configurable cluster-wide
-   Calendar OID, ISO-only initially, extensible later
-   Alias Policy Cluster-wide default (IANA/JodaTime), configurable via GUC
-   TZDB Versioning Bundled with temporal_rs crate; latest version always used; cluster-wide
-   Precision Nanoseconds
-   Casts Explicit only
-   Binary Layout Custom per type, varlena Datum
-   SQL Surface Functions first; operators optional
-   Namespace Default schema recommended (pg_temporal)
-   Cluster Config GUCs control TZDB, aliasing, disambiguation, uniform across cluster
-   Storage Structs
+- `zoneddatetime` uses identity-style equality: instant, timezone, and calendar all matter
+- ordering is implemented for types where a total order is meaningful
+- `duration` deliberately does not define ordinary comparison operators; comparison requires dedicated functions with enough context
 
-ZonedDateTime
+### Precision and formats
 
-struct ZonedDateTimeDatum {
-instant_ns: i128, // nanoseconds since epoch
-tz_oid: i32, // OID from timezone catalog
-calendar_oid: i32, // OID from calendar catalog
-}
+- nanosecond precision is preserved end-to-end
+- text I/O uses RFC 9557 / IXDTF-style strings for Temporal-compatible round-tripping
+- timezone semantics are based on bundled IANA TZDB data compiled into the extension
 
-Duration
+### Conversions
 
-struct DurationDatum {
-years: i64,
-months: i64,
-weeks: i64,
-days: i64,
-hours: i64,
-minutes: i64,
-seconds: i64,
-milliseconds: i64,
-microseconds: i128,
-nanoseconds: i128,
-}
+- casts from native PostgreSQL types are explicit
+- cross-type conversion functions exist where the transformation is well-defined
 
-Catalogs
+## 6. Cluster / Session Configuration
 
-pg_temporal.timezone_catalog → canonical tzdb IDs, OIDs, aliases
+Current GUCs:
 
-pg_temporal.calendar_catalog → calendar OIDs, names
+- `pg_temporal.default_disambiguation` — controls how ambiguous local wall-clock times are resolved
 
-## Key properties
+## 7. Non-Goals / Constraints
 
-- **Nanosecond precision** throughout
-- **Identity equality** for `zoneddatetime`: two values are equal only if instant, zone, and calendar all match
-- **Explicit conversions only** — no implicit casts from native PG types
-- **Cluster-wide configuration** via GUCs: default disambiguation strategy, timezone alias policy
-- **Standards compatibility**
-  - [TC39 Temporal](https://tc39.es/proposal-temporal/) — type semantics, identity equality, disambiguation rules
-  - [RFC 9557 / IXDTF](https://www.rfc-editor.org/rfc/rfc9557) — text format for all I/O
-  - [IANA TZDB](https://www.iana.org/time-zones) — timezone data, bundled at compile time
-- **Bundled TZDB** — no runtime data files required
+- No SQL-backed timezone or calendar catalog tables.
+- No implicit coercion intended to mimic PostgreSQL's native timestamp behavior.
+- Currently targets PostgreSQL 18 via the `pg18` feature.
+
+## 8. Standards Alignment
+
+- [TC39 Temporal](https://tc39.es/proposal-temporal/) for value semantics and API behavior
+- [RFC 9557 / IXDTF](https://www.rfc-editor.org/rfc/rfc9557) for textual representation
+- [IANA TZDB](https://www.iana.org/time-zones) for timezone rules
