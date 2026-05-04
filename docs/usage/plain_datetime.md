@@ -20,7 +20,7 @@ SELECT dt FROM meetings;
 -- 2025-03-01T14:30:00
 
 -- Extract individual fields
-SELECT plain_datetime_year(dt), plain_datetime_month(dt), plain_datetime_day(dt)
+SELECT plaindatetime_year(dt), plaindatetime_month(dt), plaindatetime_day(dt)
 FROM meetings;
 ```
 
@@ -47,15 +47,15 @@ All numeric accessors return `integer`. Sub-second fields (`millisecond`, `micro
 
 | Function                          | Range | Description   |
 | --------------------------------- | ----- | ------------- |
-| `plain_datetime_year(pdt) → int`  | any   | Calendar year |
-| `plain_datetime_month(pdt) → int` | 1–12  | Month of year |
-| `plain_datetime_day(pdt) → int`   | 1–31  | Day of month  |
+| `plaindatetime_year(pdt) → int`  | any   | Calendar year |
+| `plaindatetime_month(pdt) → int` | 1–12  | Month of year |
+| `plaindatetime_day(pdt) → int`   | 1–31  | Day of month  |
 
 ```sql
 SELECT
-  plain_datetime_year('2025-03-01T14:30:00'::temporal.plaindatetime),
-  plain_datetime_month('2025-03-01T14:30:00'::temporal.plaindatetime),
-  plain_datetime_day('2025-03-01T14:30:00'::temporal.plaindatetime);
+  plaindatetime_year('2025-03-01T14:30:00'::temporal.plaindatetime),
+  plaindatetime_month('2025-03-01T14:30:00'::temporal.plaindatetime),
+  plaindatetime_day('2025-03-01T14:30:00'::temporal.plaindatetime);
 -- 2025 | 3 | 1
 ```
 
@@ -63,30 +63,30 @@ SELECT
 
 | Function                                | Range | Description           |
 | --------------------------------------- | ----- | --------------------- |
-| `plain_datetime_hour(pdt) → int`        | 0–23  | Hour of day           |
-| `plain_datetime_minute(pdt) → int`      | 0–59  | Minute of hour        |
-| `plain_datetime_second(pdt) → int`      | 0–59  | Second of minute      |
-| `plain_datetime_millisecond(pdt) → int` | 0–999 | Millisecond component |
-| `plain_datetime_microsecond(pdt) → int` | 0–999 | Microsecond component |
-| `plain_datetime_nanosecond(pdt) → int`  | 0–999 | Nanosecond component  |
+| `plaindatetime_hour(pdt) → int`        | 0–23  | Hour of day           |
+| `plaindatetime_minute(pdt) → int`      | 0–59  | Minute of hour        |
+| `plaindatetime_second(pdt) → int`      | 0–59  | Second of minute      |
+| `plaindatetime_millisecond(pdt) → int` | 0–999 | Millisecond component |
+| `plaindatetime_microsecond(pdt) → int` | 0–999 | Microsecond component |
+| `plaindatetime_nanosecond(pdt) → int`  | 0–999 | Nanosecond component  |
 
 ```sql
 SELECT
-  plain_datetime_hour('2025-03-01T14:30:01.002003004'::temporal.plaindatetime),
-  plain_datetime_millisecond('2025-03-01T14:30:01.002003004'::temporal.plaindatetime),
-  plain_datetime_microsecond('2025-03-01T14:30:01.002003004'::temporal.plaindatetime),
-  plain_datetime_nanosecond('2025-03-01T14:30:01.002003004'::temporal.plaindatetime);
+  plaindatetime_hour('2025-03-01T14:30:01.002003004'::temporal.plaindatetime),
+  plaindatetime_millisecond('2025-03-01T14:30:01.002003004'::temporal.plaindatetime),
+  plaindatetime_microsecond('2025-03-01T14:30:01.002003004'::temporal.plaindatetime),
+  plaindatetime_nanosecond('2025-03-01T14:30:01.002003004'::temporal.plaindatetime);
 -- 14 | 2 | 3 | 4
 ```
 
 ### Calendar
 
-### `plain_datetime_calendar(pdt plaindatetime) → text`
+### `plaindatetime_calendar(pdt plaindatetime) → text`
 
 Returns the calendar identifier stored with the value.
 
 ```sql
-SELECT plain_datetime_calendar('2025-03-01T14:30:00'::temporal.plaindatetime);
+SELECT plaindatetime_calendar('2025-03-01T14:30:00'::temporal.plaindatetime);
 -- iso8601
 ```
 
@@ -102,51 +102,51 @@ SELECT '2025-03-01T12:00:00'::temporal.plaindatetime
 SELECT * FROM meetings ORDER BY dt;
 ```
 
-### `plain_datetime_compare(a plaindatetime, b plaindatetime) → integer`
+### `plaindatetime_cmp(a plaindatetime, b plaindatetime) → integer`
 
 Returns -1, 0, or 1.
 
 ## Arithmetic
 
-### `plain_datetime_add(pdt plaindatetime, dur duration) → plaindatetime`
+### `plaindatetime_add(pdt plaindatetime, dur duration) → plaindatetime`
 
 Adds a duration to a plain datetime. Day-of-month overflow is clamped (`Constrain`): e.g. Jan 31 + P1M → Feb 28/29.
 
 ```sql
-SELECT plain_datetime_add(
+SELECT plaindatetime_add(
   '2025-03-01T12:00:00'::temporal.plaindatetime,
   'P1D'::temporal.duration
 )::text;  -- 2025-03-02T12:00:00
 ```
 
-### `plain_datetime_subtract(pdt plaindatetime, dur duration) → plaindatetime`
+### `plaindatetime_subtract(pdt plaindatetime, dur duration) → plaindatetime`
 
 Subtracts a duration from a plain datetime with the same overflow behavior.
 
 ```sql
-SELECT plain_datetime_subtract(
+SELECT plaindatetime_subtract(
   '2025-03-02T12:00:00'::temporal.plaindatetime,
   'P1D'::temporal.duration
 )::text;  -- 2025-03-01T12:00:00
 ```
 
-### `plain_datetime_until(pdt plaindatetime, other plaindatetime) → duration`
+### `plaindatetime_until(pdt plaindatetime, other plaindatetime) → duration`
 
 Returns the duration from `pdt` to `other`. The default largest unit is days.
 
 ```sql
-SELECT plain_datetime_until(
+SELECT plaindatetime_until(
   '2025-03-01T00:00:00'::temporal.plaindatetime,
   '2025-03-02T00:00:00'::temporal.plaindatetime
 )::text;  -- P1D
 ```
 
-### `plain_datetime_since(pdt plaindatetime, other plaindatetime) → duration`
+### `plaindatetime_since(pdt plaindatetime, other plaindatetime) → duration`
 
 Returns the duration elapsed from `other` to `pdt`. The default largest unit is days.
 
 ```sql
-SELECT plain_datetime_since(
+SELECT plaindatetime_since(
   '2025-03-02T00:00:00'::temporal.plaindatetime,
   '2025-03-01T00:00:00'::temporal.plaindatetime
 )::text;  -- P1D
@@ -171,7 +171,7 @@ SELECT make_plaindatetime(2025, 2, 30, 0, 0, 0);  -- error
 
 ## Multi-calendar support
 
-All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The date/time fields are always stored internally as ISO 8601; accessor functions (`plain_datetime_year`, `plain_datetime_month`, `plain_datetime_day`) return calendar-specific values when a non-ISO calendar is used.
+All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The date/time fields are always stored internally as ISO 8601; accessor functions (`plaindatetime_year`, `plaindatetime_month`, `plaindatetime_day`) return calendar-specific values when a non-ISO calendar is used.
 
 ```sql
 -- Japanese calendar annotation is preserved on output
@@ -179,11 +179,11 @@ SELECT '2025-03-01T11:16:10[u-ca=japanese]'::temporal.plaindatetime::text;
 -- 2025-03-01T11:16:10[u-ca=japanese]
 
 -- The calendar accessor returns the stored calendar name
-SELECT plain_datetime_calendar('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime);
+SELECT plaindatetime_calendar('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime);
 -- persian
 
 -- Year accessor returns the calendar-specific year
-SELECT plain_datetime_year('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime);
+SELECT plaindatetime_year('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime);
 -- 1403  (Persian Solar Hijri year before Nowruz)
 ```
 

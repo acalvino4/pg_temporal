@@ -143,7 +143,7 @@ SELECT duration_is_zero('PT1S'::temporal.duration);  -- false
 
 ## Arithmetic
 
-`duration_add` and `duration_subtract` only accept **time-only** durations (hours, minutes, seconds, milliseconds, microseconds, nanoseconds). If either argument contains calendar components (years, months, weeks, days), an error is raised—use `plain_datetime_add` / `zoned_datetime_add` instead.
+`duration_add` and `duration_subtract` only accept **time-only** durations (hours, minutes, seconds, milliseconds, microseconds, nanoseconds). If either argument contains calendar components (years, months, weeks, days), an error is raised—use `plaindatetime_add` / `zoneddatetime_add` instead.
 
 ### `duration_add(a duration, b duration) → duration`
 
@@ -278,7 +278,7 @@ The result uses `DifferenceSettings::default()` (largest unit: days for `PlainDa
 
 ## Ordering
 
-`Duration` has **no total order** and no B-tree operator class. ISO 8601 durations are not totally orderable without a reference date: `P1M` vs `P30D` is context-dependent. Use `plain_datetime_until` or `zoned_datetime_until` to compare spans anchored to a specific date.
+`Duration` has **no total order** and no B-tree operator class. ISO 8601 durations are not totally orderable without a reference date: `P1M` vs `P30D` is context-dependent. Use `plaindatetime_until` or `zoneddatetime_until` to compare spans anchored to a specific date.
 
 ## Limitations / planned
 

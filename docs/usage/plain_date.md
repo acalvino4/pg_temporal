@@ -16,7 +16,7 @@ SELECT d FROM holidays;
 -- 2025-12-25
 
 -- Extract individual fields
-SELECT plain_date_year(d), plain_date_month(d), plain_date_day(d)
+SELECT plaindate_year(d), plaindate_month(d), plaindate_day(d)
 FROM holidays;
 -- 2025 | 12 | 25
 ```
@@ -39,26 +39,26 @@ Output produces an ISO 8601 date string. The `[u-ca=iso8601]` annotation is supp
 
 | Function                      | Range | Description   |
 | ----------------------------- | ----- | ------------- |
-| `plain_date_year(pd) → int`   | any   | Calendar year |
-| `plain_date_month(pd) → int`  | 1–12  | Month of year |
-| `plain_date_day(pd) → int`    | 1–31  | Day of month  |
+| `plaindate_year(pd) → int`   | any   | Calendar year |
+| `plaindate_month(pd) → int`  | 1–12  | Month of year |
+| `plaindate_day(pd) → int`    | 1–31  | Day of month  |
 
 ```sql
 SELECT
-  plain_date_year('2025-12-25'::temporal.plaindate),
-  plain_date_month('2025-12-25'::temporal.plaindate),
-  plain_date_day('2025-12-25'::temporal.plaindate);
+  plaindate_year('2025-12-25'::temporal.plaindate),
+  plaindate_month('2025-12-25'::temporal.plaindate),
+  plaindate_day('2025-12-25'::temporal.plaindate);
 -- 2025 | 12 | 25
 ```
 
 ### Calendar
 
-#### `plain_date_calendar(pd plaindate) → text`
+#### `plaindate_calendar(pd plaindate) → text`
 
 Returns the calendar identifier stored with the value.
 
 ```sql
-SELECT plain_date_calendar('2025-12-25'::temporal.plaindate);
+SELECT plaindate_calendar('2025-12-25'::temporal.plaindate);
 -- iso8601
 ```
 
@@ -74,51 +74,51 @@ SELECT '2025-03-01'::temporal.plaindate
 SELECT * FROM holidays ORDER BY d;
 ```
 
-### `plain_date_compare(a plaindate, b plaindate) → integer`
+### `plaindate_cmp(a plaindate, b plaindate) → integer`
 
 Returns -1, 0, or 1.
 
 ## Arithmetic
 
-### `plain_date_add(pd plaindate, dur duration) → plaindate`
+### `plaindate_add(pd plaindate, dur duration) → plaindate`
 
 Adds a duration to a plain date. Day-of-month overflow is clamped (`Constrain`): e.g. Jan 31 + P1M → Feb 28/29.
 
 ```sql
-SELECT plain_date_add(
+SELECT plaindate_add(
   '2025-01-31'::temporal.plaindate,
   'P1M'::temporal.duration
 )::text;  -- 2025-02-28
 ```
 
-### `plain_date_subtract(pd plaindate, dur duration) → plaindate`
+### `plaindate_subtract(pd plaindate, dur duration) → plaindate`
 
 Subtracts a duration from a plain date with the same overflow behavior.
 
 ```sql
-SELECT plain_date_subtract(
+SELECT plaindate_subtract(
   '2025-03-01'::temporal.plaindate,
   'P1D'::temporal.duration
 )::text;  -- 2025-02-28
 ```
 
-### `plain_date_until(pd plaindate, other plaindate) → duration`
+### `plaindate_until(pd plaindate, other plaindate) → duration`
 
 Returns the duration from `pd` to `other`. The default largest unit is days.
 
 ```sql
-SELECT plain_date_until(
+SELECT plaindate_until(
   '2025-01-01'::temporal.plaindate,
   '2025-12-31'::temporal.plaindate
 )::text;  -- P364D
 ```
 
-### `plain_date_since(pd plaindate, other plaindate) → duration`
+### `plaindate_since(pd plaindate, other plaindate) → duration`
 
 Returns the duration elapsed from `other` to `pd`. The default largest unit is days.
 
 ```sql
-SELECT plain_date_since(
+SELECT plaindate_since(
   '2025-12-31'::temporal.plaindate,
   '2025-01-01'::temporal.plaindate
 )::text;  -- P364D
@@ -151,7 +151,7 @@ SELECT '2025-03-01[u-ca=japanese]'::temporal.plaindate::text;
 -- 2025-03-01[u-ca=japanese]
 
 -- Year accessor returns the calendar-specific year
-SELECT plain_date_year('2025-03-01[u-ca=persian]'::temporal.plaindate);
+SELECT plaindate_year('2025-03-01[u-ca=persian]'::temporal.plaindate);
 -- 1403  (Persian Solar Hijri year before Nowruz)
 ```
 

@@ -190,24 +190,24 @@ pub fn make_plainyearmonth(
 /// Returns the calendar year.
 #[must_use]
 #[pg_extern(stable, parallel_safe)]
-pub fn plain_year_month_year(pym: PlainYearMonth) -> i32 {
+pub fn plainyearmonth_year(pym: PlainYearMonth) -> i32 {
     pym.to_temporal().year()
 }
 
 /// Returns the calendar month (1-indexed).
 #[must_use]
 #[pg_extern(stable, parallel_safe)]
-pub fn plain_year_month_month(pym: PlainYearMonth) -> i32 {
+pub fn plainyearmonth_month(pym: PlainYearMonth) -> i32 {
     i32::from(pym.to_temporal().month())
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_calendar(pym: PlainYearMonth) -> String {
+pub fn plainyearmonth_calendar(pym: PlainYearMonth) -> String {
     crate::cal_index::name_of(pym.cal_idx)
         .unwrap_or_else(|| {
-            error!("plain_year_month_calendar: unknown calendar index {}", pym.cal_idx)
+            error!("plainyearmonth_calendar: unknown calendar index {}", pym.cal_idx)
         })
         .to_string()
 }
@@ -268,11 +268,11 @@ impl PlainYearMonth {
 /// Uses `Constrain` overflow.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_add(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth {
+pub fn plainyearmonth_add(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth {
     let result = pym
         .to_temporal()
         .add(&dur.to_temporal(), Overflow::Constrain)
-        .unwrap_or_else(|e| error!("plain_year_month_add failed: {e}"));
+        .unwrap_or_else(|e| error!("plainyearmonth_add failed: {e}"));
     PlainYearMonth::from_temporal(&result)
 }
 
@@ -281,32 +281,32 @@ pub fn plain_year_month_add(pym: PlainYearMonth, dur: Duration) -> PlainYearMont
 /// Uses `Constrain` overflow.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_subtract(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth {
+pub fn plainyearmonth_subtract(pym: PlainYearMonth, dur: Duration) -> PlainYearMonth {
     let result = pym
         .to_temporal()
         .subtract(&dur.to_temporal(), Overflow::Constrain)
-        .unwrap_or_else(|e| error!("plain_year_month_subtract failed: {e}"));
+        .unwrap_or_else(|e| error!("plainyearmonth_subtract failed: {e}"));
     PlainYearMonth::from_temporal(&result)
 }
 
 /// Returns the duration elapsed from `other` to `pym` (default unit: months).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_since(pym: PlainYearMonth, other: PlainYearMonth) -> Duration {
+pub fn plainyearmonth_since(pym: PlainYearMonth, other: PlainYearMonth) -> Duration {
     let d = pym
         .to_temporal()
         .since(&other.to_temporal(), DifferenceSettings::default())
-        .unwrap_or_else(|e| error!("plain_year_month_since failed: {e}"));
+        .unwrap_or_else(|e| error!("plainyearmonth_since failed: {e}"));
     Duration::from_temporal(&d)
 }
 
 /// Returns the duration from `pym` to `other` (default unit: months).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_until(pym: PlainYearMonth, other: PlainYearMonth) -> Duration {
+pub fn plainyearmonth_until(pym: PlainYearMonth, other: PlainYearMonth) -> Duration {
     let d = pym
         .to_temporal()
         .until(&other.to_temporal(), DifferenceSettings::default())
-        .unwrap_or_else(|e| error!("plain_year_month_until failed: {e}"));
+        .unwrap_or_else(|e| error!("plainyearmonth_until failed: {e}"));
     Duration::from_temporal(&d)
 }

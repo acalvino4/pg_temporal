@@ -5,20 +5,72 @@
 | Phase                                     | Status   |
 | ----------------------------------------- | -------- |
 | Scaffold + environment                    | complete |
-| Catalog tables + `zoned_datetime`         | complete |
-| `instant`, `plain_datetime`, `duration`   | complete |
+| Catalog tables + `zoneddatetime`          | complete |
+| `instant`, `plaindatetime`, `duration`    | complete |
 | Multi-calendar support                    | complete |
 | Constructor functions                     | complete |
 | `now()` functions                         | complete |
 | `duration_round` / `duration_total`       | complete |
 | `duration_add/subtract` with `relativeTo` | complete |
 | Arithmetic + comparison operators         | complete |
-| `plain_date`, `plain_time`, `plain_year_month`, `plain_month_day` | complete |
+| `plaindate`, `plaintime`, `plainyearmonth`, `plainmonthday`       | complete |
 | Explicit casts from native PG types       | complete |
 | `ALIAS_POLICY` GUC resolution             | complete |
 
 ## Infrastructure / productionization gaps
 
+### High-impact functional gaps
+
+**No hash operator class.**
+No `PostgresHash` derive or hash support for any type. This means types cannot be used as hash join keys, `GROUP BY` cannot use hash aggregation, `CREATE INDEX ... USING HASH` is impossible, and `IN (...)` lists cannot use hash strategies. Affects all seven temporal types.
+
+**`alias_policy` GUC is registered but does nothing.**
+The setting is exposed to users but has no effect — timezone aliases are passed through to `temporal_rs` as-is regardless of the value. Misleading and production-dangerous.
+
+**Missing cross-type SQL casts.**
+Resolved: `time ↔ PlainTime` casts are registered. The other conversions (`ZonedDateTime → Instant`, `PlainDateTime → PlainDate`, `PlainDateTime → PlainTime`) are exposed as explicit SQL functions rather than casts — discarding context should be intentional at the call site. `ZonedDateTime → timestamptz` is handled by composing `zoneddatetime_to_instant()` with the existing `Instant::timestamptz` cast.
+
+**No binary send/recv functions.**
+Only text `in`/`out` are implemented. Without registered `send`/`recv` functions, `COPY ... (FORMAT binary)`, logical replication, and some client protocols fall back to slow text I/O.
+
+### Correctness / safety
+
+**Non-`strict` functions panic on NULL.**
+Most `#[pg_extern]` functions don't declare `strict`, so NULL inputs hit `unbox_arg_unchecked` and panic (uncontrolled abort) instead of raising a proper PostgreSQL error.
+
+**`stable` vs `immutable` misclassification.**
+`plaindate_year`, `plaindate_month`, and `plaindate_day` are marked `stable` but depend only on their input value — they should be `immutable`. Incorrect stability categories prevent the query optimizer from using indexes.
+
+**No NULL-handling tests.**
+All tests pass concrete values. No tests verify that NULL inputs propagate correctly through functions or that non-`strict` functions behave predictably.
+
+### Production / deployment
+
+**`superuser = true` in control file.**
+Installation requires superuser, which blocks use on RDS, Supabase, Neon, and most hosted PostgreSQL services. Should be `superuser = false` (with `trusted = true`) and explicit privilege grants.
 
 **No version migration path.**
 No `pg_temporal--0.0.1--0.0.2.sql` upgrade scripts. Any schema change requires a full drop/reinstall.
+
+**No CI pipeline.**
+No `.github/workflows/` — no automated build, lint, test, or packaging on push/PR.
+
+**Pre-1.0 `temporal_rs` dependency.**
+`temporal_rs = "0.2.x"` is pre-release software; API breakage between minor versions is expected. Blocks any stability guarantee needed for production.
+
+**No PGXN packaging or release artifacts.**
+No `META.json`, no pre-built binaries, no release automation. `cargo pgrx package` is documented but never run in CI.
+
+### Lower priority
+
+**`Duration` has no comparison operators.**
+Probably correct per Temporal semantics (durations aren't meaningfully ordered without a reference point), but it's undocumented and will surprise users who try `ORDER BY` on a duration column.
+
+**`pg18` hardcoded as default Cargo feature.**
+`default = ["pg18"]` means missing `--features` silently targets PG18 — a footgun if PG16/17 support is added later.
+
+**Only PostgreSQL 18 is supported.**
+No `pg16`/`pg17` feature flags. Locks out any production database not on PG18. A production extension typically supports the last 3+ major versions.
+
+**Spec.md is outdated.**
+Describes `pg_temporal.timezone_catalog` and `pg_temporal.calendar_catalog` SQL tables that don't exist; the implementation uses compile-time arrays instead.

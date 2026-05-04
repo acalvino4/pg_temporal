@@ -95,9 +95,9 @@ INSERT INTO temporal.calendar_catalog (calendar_id) VALUES ('iso8601');
 CREATE TYPE ZonedDateTime (INTERNALLENGTH = variable, INPUT = zoneddatetime_in, OUTPUT = zoneddatetime_out, STORAGE = extended);
 
 -- accessor functions
-CREATE FUNCTION zoned_datetime_timezone(zdt ZonedDateTime) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION zoned_datetime_calendar(zdt ZonedDateTime) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION zoned_datetime_epoch_ns(zdt ZonedDateTime) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION zoneddatetime_timezone(zdt ZonedDateTime) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION zoneddatetime_calendar(zdt ZonedDateTime) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION zoneddatetime_epoch_ns(zdt ZonedDateTime) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
 ```
 
 ### Post-implementation cleanup (verified)
@@ -167,16 +167,16 @@ CREATE TYPE PlainDateTime (...);
 CREATE FUNCTION instant_epoch_ns(inst Instant) RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
 
 -- PlainDateTime accessors
-CREATE FUNCTION plain_datetime_year(pdt PlainDateTime)         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_month(pdt PlainDateTime)        RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_day(pdt PlainDateTime)          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_hour(pdt PlainDateTime)         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_minute(pdt PlainDateTime)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_second(pdt PlainDateTime)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_millisecond(pdt PlainDateTime)  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_microsecond(pdt PlainDateTime)  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_nanosecond(pdt PlainDateTime)   RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
-CREATE FUNCTION plain_datetime_calendar(pdt PlainDateTime)     RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_year(pdt PlainDateTime)         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_month(pdt PlainDateTime)        RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_day(pdt PlainDateTime)          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_hour(pdt PlainDateTime)         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_minute(pdt PlainDateTime)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_second(pdt PlainDateTime)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_millisecond(pdt PlainDateTime)  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_microsecond(pdt PlainDateTime)  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_nanosecond(pdt PlainDateTime)   RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE ...;
+CREATE FUNCTION plaindatetime_calendar(pdt PlainDateTime)     RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE ...;
 
 -- Duration accessors
 CREATE FUNCTION duration_years(d Duration)        RETURNS BIGINT IMMUTABLE STRICT PARALLEL SAFE ...;
@@ -222,7 +222,7 @@ Clippy's `wrong_self_convention` lint fires on `to_*` methods that take `&self` 
 At the time of this phase (pgrx 0.17), this project registered operators (`<`, `<=`, `=`, `!=`, `>=`, `>`) with `extension_sql!` blocks. Each block `requires = [...]` the underlying comparison functions so pgrx orders them correctly in the generated schema file.
 
 **Identity equality for `ZonedDateTime`**
-The Temporal spec's "ZonedDateTime equality" means instant + timezone + calendar all match. Two values representing the same instant in different zones are NOT equal. The `=` operator compares the `(instant_ns, tz_oid, calendar_oid)` tuple. `zoned_datetime_compare` uses the same tuple for ordering, making the order consistent with equality.
+The Temporal spec's "ZonedDateTime equality" means instant + timezone + calendar all match. Two values representing the same instant in different zones are NOT equal. The `=` operator compares the `(instant_ns, tz_oid, calendar_oid)` tuple. `zoneddatetime_cmp` uses the same tuple for ordering, making the order consistent with equality.
 
 **`instant_since` / `instant_until` return seconds by default**
 `Instant::since` and `Instant::until` with `DifferenceSettings::default()` normalize the result to seconds (the largest unit valid for an Instant, since Instants have no calendar context). The result for a 2-hour gap is `PT7200S`, not `PT2H`. This is correct Temporal behavior; tests assert `PT7200S`.
@@ -235,7 +235,7 @@ The Temporal spec's "ZonedDateTime equality" means instant + timezone + calendar
 **`ZonedDateTime`**
 
 ```sql
-CREATE FUNCTION zoned_datetime_compare(a ZonedDateTime, b ZonedDateTime) RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoneddatetime_cmp(a ZonedDateTime, b ZonedDateTime) RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION zoned_datetime_lt(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION zoned_datetime_le(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION zoned_datetime_eq(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
@@ -244,15 +244,15 @@ CREATE FUNCTION zoned_datetime_ge(a ZonedDateTime, b ZonedDateTime)      RETURNS
 CREATE FUNCTION zoned_datetime_gt(a ZonedDateTime, b ZonedDateTime)      RETURNS BOOL IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OPERATOR <  (FUNCTION = zoned_datetime_lt, LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime);
 -- ... and <=, =, !=, >=, >
-CREATE FUNCTION zoned_datetime_add(zdt ZonedDateTime, dur Duration)       RETURNS ZonedDateTime IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION zoned_datetime_subtract(zdt ZonedDateTime, dur Duration)  RETURNS ZonedDateTime IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION zoned_datetime_since(self ZonedDateTime, other ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION zoned_datetime_until(self ZonedDateTime, other ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoneddatetime_add(zdt ZonedDateTime, dur Duration)       RETURNS ZonedDateTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoneddatetime_subtract(zdt ZonedDateTime, dur Duration)  RETURNS ZonedDateTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoneddatetime_since(self ZonedDateTime, other ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION zoneddatetime_until(self ZonedDateTime, other ZonedDateTime) RETURNS Duration IMMUTABLE STRICT PARALLEL SAFE;
 ```
 
 **`Instant`** — same pattern: `instant_compare`, `instant_lt/le/eq/ne/ge/gt`, operators, `instant_add/subtract/since/until`.
 
-**`PlainDateTime`** — same pattern: `plain_datetime_compare`, `plain_datetime_lt/le/eq/ne/ge/gt`, operators, `plain_datetime_add/subtract/since/until`.
+**`PlainDateTime`** — same pattern: `plaindatetime_cmp`, `plain_datetime_lt/le/eq/ne/ge/gt`, operators, `plaindatetime_add/subtract/since/until`.
 
 **`Duration`**
 
@@ -339,7 +339,7 @@ src/
 ### Key decisions
 
 **Constructor functions take `text` not `numeric` for epoch nanoseconds**
-`make_instant` and `make_zoneddatetime` take `epoch_ns: &str` (mapped to SQL `text`) rather than `numeric`. There is no native PostgreSQL 128-bit integer type; `numeric` would require a conversion through a string representation anyway. Text is explicit and consistent with how `instant_epoch_ns` and `zoned_datetime_epoch_ns` return their values.
+`make_instant` and `make_zoneddatetime` take `epoch_ns: &str` (mapped to SQL `text`) rather than `numeric`. There is no native PostgreSQL 128-bit integer type; `numeric` would require a conversion through a string representation anyway. Text is explicit and consistent with how `instant_epoch_ns` and `zoneddatetime_epoch_ns` return their values.
 
 **`make_plaindatetime` — `#[allow(clippy::too_many_arguments)]`**
 The constructor necessarily takes 10 parameters (year through nanosecond plus calendar). Clippy's `too_many_arguments` lint was suppressed with an attribute rather than worked around with a builder struct — adding a builder type would add complexity with no user-facing SQL benefit.
@@ -486,57 +486,57 @@ Both are implemented in `src/now.rs` by delegating to `current_zdt(tz, fn_name)`
 ```sql
 -- PlainDate
 CREATE FUNCTION make_plaindate(year int, month int, day int [, cal text DEFAULT 'iso8601']) RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_year(pd PlainDate)                    RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_month(pd PlainDate)                   RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_day(pd PlainDate)                     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_calendar(pd PlainDate)                RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_compare(a PlainDate, b PlainDate)     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_year(pd PlainDate)                    RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_month(pd PlainDate)                   RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_day(pd PlainDate)                     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_calendar(pd PlainDate)                RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_cmp(a PlainDate, b PlainDate)     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainDate, RIGHTARG = PlainDate);
-CREATE OPERATOR CLASS plain_date_btree_ops DEFAULT FOR TYPE PlainDate USING btree;
-CREATE FUNCTION plain_date_add(pd PlainDate, dur Duration)                   RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_subtract(pd PlainDate, dur Duration)              RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_since(pd PlainDate, other PlainDate)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_date_until(pd PlainDate, other PlainDate)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR CLASS plaindate_btree_ops DEFAULT FOR TYPE PlainDate USING btree;
+CREATE FUNCTION plaindate_add(pd PlainDate, dur Duration)                   RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_subtract(pd PlainDate, dur Duration)              RETURNS PlainDate IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_since(pd PlainDate, other PlainDate)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaindate_until(pd PlainDate, other PlainDate)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION temporal_now_plaindate(tz text)                              RETURNS PlainDate STABLE   STRICT PARALLEL SAFE;
 
 -- PlainTime
 CREATE FUNCTION make_plaintime(hour int, minute int, second int [, millisecond int DEFAULT 0, microsecond int DEFAULT 0, nanosecond int DEFAULT 0]) RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_hour(pt PlainTime)                    RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_minute(pt PlainTime)                  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_second(pt PlainTime)                  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_millisecond(pt PlainTime)             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_microsecond(pt PlainTime)             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_nanosecond(pt PlainTime)              RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_compare(a PlainTime, b PlainTime)     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_hour(pt PlainTime)                    RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_minute(pt PlainTime)                  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_second(pt PlainTime)                  RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_millisecond(pt PlainTime)             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_microsecond(pt PlainTime)             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_nanosecond(pt PlainTime)              RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_cmp(a PlainTime, b PlainTime)     RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainTime, RIGHTARG = PlainTime);
-CREATE OPERATOR CLASS plain_time_btree_ops DEFAULT FOR TYPE PlainTime USING btree;
-CREATE FUNCTION plain_time_add(pt PlainTime, dur Duration)                   RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_subtract(pt PlainTime, dur Duration)              RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_since(pt PlainTime, other PlainTime)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_time_until(pt PlainTime, other PlainTime)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR CLASS plaintime_btree_ops DEFAULT FOR TYPE PlainTime USING btree;
+CREATE FUNCTION plaintime_add(pt PlainTime, dur Duration)                   RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_subtract(pt PlainTime, dur Duration)              RETURNS PlainTime IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_since(pt PlainTime, other PlainTime)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plaintime_until(pt PlainTime, other PlainTime)              RETURNS Duration  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE FUNCTION temporal_now_plaintime(tz text)                              RETURNS PlainTime STABLE   STRICT PARALLEL SAFE;
 
 -- PlainYearMonth
 CREATE FUNCTION make_plainyearmonth(year int, month int [, cal text DEFAULT 'iso8601']) RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_year(pym PlainYearMonth)                          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_month(pym PlainYearMonth)                         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_calendar(pym PlainYearMonth)                      RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_compare(a PlainYearMonth, b PlainYearMonth)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_year(pym PlainYearMonth)                          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_month(pym PlainYearMonth)                         RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_calendar(pym PlainYearMonth)                      RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_cmp(a PlainYearMonth, b PlainYearMonth)       RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth);
-CREATE OPERATOR CLASS plain_year_month_btree_ops DEFAULT FOR TYPE PlainYearMonth USING btree;
-CREATE FUNCTION plain_year_month_add(pym PlainYearMonth, dur Duration)             RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_subtract(pym PlainYearMonth, dur Duration)        RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_since(pym PlainYearMonth, other PlainYearMonth)   RETURNS Duration       IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_year_month_until(pym PlainYearMonth, other PlainYearMonth)   RETURNS Duration       IMMUTABLE STRICT PARALLEL SAFE;
+CREATE OPERATOR CLASS plainyearmonth_btree_ops DEFAULT FOR TYPE PlainYearMonth USING btree;
+CREATE FUNCTION plainyearmonth_add(pym PlainYearMonth, dur Duration)             RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_subtract(pym PlainYearMonth, dur Duration)        RETURNS PlainYearMonth IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_since(pym PlainYearMonth, other PlainYearMonth)   RETURNS Duration       IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainyearmonth_until(pym PlainYearMonth, other PlainYearMonth)   RETURNS Duration       IMMUTABLE STRICT PARALLEL SAFE;
 
 -- PlainMonthDay
 CREATE FUNCTION make_plainmonthday(month int, day int [, cal text DEFAULT 'iso8601']) RETURNS PlainMonthDay IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_month_day_month(pmd PlainMonthDay)                           RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_month_day_day(pmd PlainMonthDay)                             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_month_day_calendar(pmd PlainMonthDay)                        RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
-CREATE FUNCTION plain_month_day_compare(a PlainMonthDay, b PlainMonthDay)          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainmonthday_month(pmd PlainMonthDay)                           RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainmonthday_day(pmd PlainMonthDay)                             RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainmonthday_calendar(pmd PlainMonthDay)                        RETURNS TEXT IMMUTABLE STRICT PARALLEL SAFE;
+CREATE FUNCTION plainmonthday_cmp(a PlainMonthDay, b PlainMonthDay)          RETURNS INT  IMMUTABLE STRICT PARALLEL SAFE;
 CREATE OPERATOR <, <=, =, <>, >=, > (LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay);
-CREATE OPERATOR CLASS plain_month_day_btree_ops DEFAULT FOR TYPE PlainMonthDay USING btree;
+CREATE OPERATOR CLASS plainmonthday_btree_ops DEFAULT FOR TYPE PlainMonthDay USING btree;
 ```
 
 ### Test count

@@ -217,42 +217,42 @@ pub fn make_plaintime(
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_hour(pt: PlainTime) -> i32 {
+pub fn plaintime_hour(pt: PlainTime) -> i32 {
     i32::from(pt.hour)
 }
 
 /// Returns the minute component (0–59).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_minute(pt: PlainTime) -> i32 {
+pub fn plaintime_minute(pt: PlainTime) -> i32 {
     i32::from(pt.minute)
 }
 
 /// Returns the second component (0–59).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_second(pt: PlainTime) -> i32 {
+pub fn plaintime_second(pt: PlainTime) -> i32 {
     i32::from(pt.second)
 }
 
 /// Returns the millisecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_millisecond(pt: PlainTime) -> i32 {
+pub fn plaintime_millisecond(pt: PlainTime) -> i32 {
     (pt.subsecond_ns / 1_000_000) as i32
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_microsecond(pt: PlainTime) -> i32 {
+pub fn plaintime_microsecond(pt: PlainTime) -> i32 {
     ((pt.subsecond_ns % 1_000_000) / 1_000) as i32
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_nanosecond(pt: PlainTime) -> i32 {
+pub fn plaintime_nanosecond(pt: PlainTime) -> i32 {
     (pt.subsecond_ns % 1_000) as i32
 }
 
@@ -291,43 +291,88 @@ impl PlainTime {
 /// Add a duration to a plain time. Wraps around midnight.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_add(pt: PlainTime, dur: Duration) -> PlainTime {
+pub fn plaintime_add(pt: PlainTime, dur: Duration) -> PlainTime {
     let result = pt
         .to_temporal()
         .add(&dur.to_temporal())
-        .unwrap_or_else(|e| error!("plain_time_add failed: {e}"));
+        .unwrap_or_else(|e| error!("plaintime_add failed: {e}"));
     PlainTime::from_temporal(&result)
 }
 
 /// Subtract a duration from a plain time. Wraps around midnight.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_subtract(pt: PlainTime, dur: Duration) -> PlainTime {
+pub fn plaintime_subtract(pt: PlainTime, dur: Duration) -> PlainTime {
     let result = pt
         .to_temporal()
         .subtract(&dur.to_temporal())
-        .unwrap_or_else(|e| error!("plain_time_subtract failed: {e}"));
+        .unwrap_or_else(|e| error!("plaintime_subtract failed: {e}"));
     PlainTime::from_temporal(&result)
 }
 
 /// Returns the duration elapsed from `other` to `pt`.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_since(pt: PlainTime, other: PlainTime) -> Duration {
+pub fn plaintime_since(pt: PlainTime, other: PlainTime) -> Duration {
     let d = pt
         .to_temporal()
         .since(&other.to_temporal(), DifferenceSettings::default())
-        .unwrap_or_else(|e| error!("plain_time_since failed: {e}"));
+        .unwrap_or_else(|e| error!("plaintime_since failed: {e}"));
     Duration::from_temporal(&d)
 }
 
 /// Returns the duration from `pt` to `other`.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_until(pt: PlainTime, other: PlainTime) -> Duration {
+pub fn plaintime_until(pt: PlainTime, other: PlainTime) -> Duration {
     let d = pt
         .to_temporal()
         .until(&other.to_temporal(), DifferenceSettings::default())
-        .unwrap_or_else(|e| error!("plain_time_until failed: {e}"));
+        .unwrap_or_else(|e| error!("plaintime_until failed: {e}"));
     Duration::from_temporal(&d)
 }
+
+// ---------------------------------------------------------------------------
+// Explicit casts: time ↔ PlainTime
+// ---------------------------------------------------------------------------
+
+/// Cast a `time` (without time zone) to a `PlainTime`.
+///
+/// Sub-microsecond nanoseconds are always zero since `time` has only
+/// microsecond precision.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn time_to_plaintime(t: Time) -> PlainTime {
+    let (hour, minute, second, total_us) = t.to_hms_micro();
+    // microseconds() is EXTRACT(MICROSECONDS FROM ...), which includes the
+    // whole-seconds component: second * 1_000_000 + sub-second µs.
+    let subsecond_us = total_us % 1_000_000;
+    let ms = (subsecond_us / 1_000) as u16;
+    let us = (subsecond_us % 1_000) as u16;
+    let pt = TemporalPt::try_new(hour, minute, second, ms, us, 0)
+        .unwrap_or_else(|e| error!("time_to_plaintime: {e}"));
+    PlainTime::from_temporal(&pt)
+}
+
+/// Cast a `PlainTime` to a `time` (without time zone).
+///
+/// Sub-microsecond precision (nanoseconds) is truncated (rounded toward zero).
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn plaintime_to_time(pt: PlainTime) -> Time {
+    let subsecond_us = pt.subsecond_ns / 1_000; // 0..999_999
+    let second_with_frac = pt.second as f64 + subsecond_us as f64 / 1_000_000.0;
+    Time::new(pt.hour, pt.minute, second_with_frac)
+        .unwrap_or_else(|e| error!("plaintime_to_time: out of range: {e:?}"))
+}
+
+extension_sql!(
+    r"
+    CREATE CAST (time AS PlainTime)
+        WITH FUNCTION time_to_plaintime(time);
+    CREATE CAST (PlainTime AS time)
+        WITH FUNCTION plaintime_to_time(PlainTime);
+    ",
+    name = "plaintime_casts",
+    requires = [time_to_plaintime, plaintime_to_time],
+);

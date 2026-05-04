@@ -8,13 +8,13 @@ Core features:
 
 Types:
 
-pg_temporal.zoned_datetime — timezone-aware datetime
+temporal.zoneddatetime — timezone-aware datetime
 
-pg_temporal.instant — absolute UTC instant
+temporal.instant — absolute UTC instant
 
-pg_temporal.plain_datetime — calendar-local datetime
+temporal.plaindatetime — calendar-local datetime
 
-pg_temporal.duration — full vector durations (calendar + exact)
+temporal.duration — full vector durations (calendar + exact)
 
 Functions: Constructors, arithmetic, conversions, disambiguation handling
 
@@ -102,7 +102,7 @@ pg_temporal.calendar_catalog → calendar OIDs, names
 ## Key properties
 
 - **Nanosecond precision** throughout
-- **Identity equality** for `zoned_datetime`: two values are equal only if instant, zone, and calendar all match
+- **Identity equality** for `zoneddatetime`: two values are equal only if instant, zone, and calendar all match
 - **Explicit conversions only** — no implicit casts from native PG types
 - **Cluster-wide configuration** via GUCs: default disambiguation strategy, timezone alias policy
 - **Standards compatibility**

@@ -63,7 +63,7 @@ fn pdt_roundtrip_explicit_calendar_annotation() {
 #[pg_test]
 fn pdt_accessor_year() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_year('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_year('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -73,7 +73,7 @@ fn pdt_accessor_year() {
 #[pg_test]
 fn pdt_accessor_month() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_month('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_month('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -83,7 +83,7 @@ fn pdt_accessor_month() {
 #[pg_test]
 fn pdt_accessor_day() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_day('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_day('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -93,7 +93,7 @@ fn pdt_accessor_day() {
 #[pg_test]
 fn pdt_accessor_hour() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_hour('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_hour('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -103,7 +103,7 @@ fn pdt_accessor_hour() {
 #[pg_test]
 fn pdt_accessor_minute() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_minute('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_minute('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -113,7 +113,7 @@ fn pdt_accessor_minute() {
 #[pg_test]
 fn pdt_accessor_second() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_second('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_second('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -123,7 +123,7 @@ fn pdt_accessor_second() {
 #[pg_test]
 fn pdt_accessor_millisecond() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_millisecond('2025-03-01T11:16:10.123456789'::temporal.plaindatetime)",
+        "SELECT plaindatetime_millisecond('2025-03-01T11:16:10.123456789'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -133,7 +133,7 @@ fn pdt_accessor_millisecond() {
 #[pg_test]
 fn pdt_accessor_microsecond() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_microsecond('2025-03-01T11:16:10.123456789'::temporal.plaindatetime)",
+        "SELECT plaindatetime_microsecond('2025-03-01T11:16:10.123456789'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -143,7 +143,7 @@ fn pdt_accessor_microsecond() {
 #[pg_test]
 fn pdt_accessor_nanosecond() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_datetime_nanosecond('2025-03-01T11:16:10.123456789'::temporal.plaindatetime)",
+        "SELECT plaindatetime_nanosecond('2025-03-01T11:16:10.123456789'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -153,7 +153,7 @@ fn pdt_accessor_nanosecond() {
 #[pg_test]
 fn pdt_accessor_calendar_defaults_to_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_datetime_calendar('2025-03-01T11:16:10'::temporal.plaindatetime)",
+        "SELECT plaindatetime_calendar('2025-03-01T11:16:10'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -253,7 +253,7 @@ fn pdt_order_by() {
 #[pg_test]
 fn pdt_add_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_datetime_add(
+        "SELECT plaindatetime_add(
             '2025-03-01T12:00:00'::temporal.plaindatetime,
             'P1D'::temporal.duration
         )::text",
@@ -267,7 +267,7 @@ fn pdt_add_one_day() {
 #[pg_test]
 fn pdt_subtract_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_datetime_subtract(
+        "SELECT plaindatetime_subtract(
             '2025-03-02T12:00:00'::temporal.plaindatetime,
             'P1D'::temporal.duration
         )::text",
@@ -281,7 +281,7 @@ fn pdt_subtract_one_day() {
 #[pg_test]
 fn pdt_until_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_datetime_until(
+        "SELECT plaindatetime_until(
             '2025-03-01T00:00:00'::temporal.plaindatetime,
             '2025-03-02T00:00:00'::temporal.plaindatetime
         )::text",
@@ -295,7 +295,7 @@ fn pdt_until_one_day() {
 #[pg_test]
 fn pdt_since_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_datetime_since(
+        "SELECT plaindatetime_since(
             '2025-03-02T00:00:00'::temporal.plaindatetime,
             '2025-03-01T00:00:00'::temporal.plaindatetime
         )::text",
@@ -339,7 +339,7 @@ fn pdt_roundtrip_persian_calendar() {
 #[pg_test]
 fn pdt_multi_calendar_accessor_returns_correct_name() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_datetime_calendar('2025-03-01T11:16:10[u-ca=japanese]'::temporal.plaindatetime)",
+        "SELECT plaindatetime_calendar('2025-03-01T11:16:10[u-ca=japanese]'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -352,7 +352,7 @@ fn pdt_multi_calendar_accessor_returns_correct_name() {
 #[pg_test]
 fn pdt_year_accessor_returns_calendar_year_for_persian() {
     let year = Spi::get_one::<i32>(
-        "SELECT plain_datetime_year('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime)",
+        "SELECT plaindatetime_year('2025-03-01T00:00:00[u-ca=persian]'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -366,17 +366,17 @@ fn pdt_year_accessor_returns_calendar_year_for_persian() {
 #[pg_test]
 fn pdt_iso_calendar_year_month_day_match() {
     let year = Spi::get_one::<i32>(
-        "SELECT plain_datetime_year('2025-03-01T00:00:00'::temporal.plaindatetime)",
+        "SELECT plaindatetime_year('2025-03-01T00:00:00'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
     let month = Spi::get_one::<i32>(
-        "SELECT plain_datetime_month('2025-03-01T00:00:00'::temporal.plaindatetime)",
+        "SELECT plaindatetime_month('2025-03-01T00:00:00'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
     let day = Spi::get_one::<i32>(
-        "SELECT plain_datetime_day('2025-03-01T00:00:00'::temporal.plaindatetime)",
+        "SELECT plaindatetime_day('2025-03-01T00:00:00'::temporal.plaindatetime)",
     )
     .unwrap()
     .unwrap();
@@ -430,7 +430,7 @@ fn pdt_make_defaults_match_explicit_zero() {
 #[pg_test]
 fn pdt_make_calendar_stored() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_datetime_calendar(make_plaindatetime(2025, 6, 15, 0, 0, 0, 0, 0, 0, 'iso8601'))",
+        "SELECT plaindatetime_calendar(make_plaindatetime(2025, 6, 15, 0, 0, 0, 0, 0, 0, 'iso8601'))",
     )
     .unwrap()
     .unwrap();
@@ -464,21 +464,21 @@ fn pg_cast_timestamp_to_plaindatetime_basic() {
 #[pg_test]
 fn pg_cast_timestamp_to_plaindatetime_microseconds_parsed() {
     let ms = Spi::get_one::<i32>(
-        "SELECT plain_datetime_millisecond(
+        "SELECT plaindatetime_millisecond(
             '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime
         )",
     )
     .unwrap()
     .unwrap();
     let us = Spi::get_one::<i32>(
-        "SELECT plain_datetime_microsecond(
+        "SELECT plaindatetime_microsecond(
             '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime
         )",
     )
     .unwrap()
     .unwrap();
     let ns = Spi::get_one::<i32>(
-        "SELECT plain_datetime_nanosecond(
+        "SELECT plaindatetime_nanosecond(
             '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime
         )",
     )
@@ -517,7 +517,7 @@ fn pg_cast_timestamp_to_plaindatetime_midnight() {
 #[pg_test]
 fn pg_cast_timestamp_to_plaindatetime_calendar_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_datetime_calendar(
+        "SELECT plaindatetime_calendar(
             '2025-03-01 11:16:10'::timestamp::temporal.plaindatetime
         )",
     )
@@ -549,7 +549,7 @@ fn pg_cast_plaindatetime_to_timestamp_basic() {
 #[pg_test]
 fn pg_cast_plaindatetime_to_timestamp_sub_micro_truncated() {
     let ns = Spi::get_one::<i32>(
-        "SELECT plain_datetime_nanosecond(
+        "SELECT plaindatetime_nanosecond(
             '2025-01-01T10:20:30.000000001'::temporal.plaindatetime
                 ::timestamp
                 ::temporal.plaindatetime
@@ -561,7 +561,7 @@ fn pg_cast_plaindatetime_to_timestamp_sub_micro_truncated() {
 
     // Boundary: 1999 µs + 999 ns must truncate to 1999 µs, not round to 2000 µs.
     let us = Spi::get_one::<i32>(
-        "SELECT plain_datetime_microsecond(
+        "SELECT plaindatetime_microsecond(
             make_plaindatetime(2025, 1, 1, 10, 20, 30, 1, 999, 999)
                 ::timestamp
                 ::temporal.plaindatetime
@@ -570,4 +570,83 @@ fn pg_cast_plaindatetime_to_timestamp_sub_micro_truncated() {
     .unwrap()
     .unwrap();
     assert_eq!(us, 999, "expected truncation to 999 µs, not rounding to 1000");
+}
+
+// -----------------------------------------------------------------------
+// Cross-type conversions
+// -----------------------------------------------------------------------
+
+/// plaindatetime_to_plaindate drops time-of-day and preserves date fields.
+#[pg_test]
+fn pdt_to_plaindate_drops_time() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindatetime_to_plaindate('2025-06-15T12:30:45'::temporal.plaindatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-06-15");
+}
+
+/// plaindatetime_to_plaindate preserves the calendar annotation.
+#[pg_test]
+fn pdt_to_plaindate_preserves_calendar() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plaindate_calendar(
+            plaindatetime_to_plaindate(
+                make_plaindatetime(2025, 6, 15, 12, 30, 0, 0, 0, 0, 'japanese')
+            )
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "japanese");
+}
+
+/// plaindatetime_to_plaintime drops the date and preserves nanoseconds.
+#[pg_test]
+fn pdt_to_plaintime_drops_date() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindatetime_to_plaintime('2025-06-15T12:30:45.000000001'::temporal.plaindatetime)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r.starts_with("12:30:45"), "got: {r}");
+    let ns = Spi::get_one::<i32>(
+        "SELECT plaintime_nanosecond(
+            plaindatetime_to_plaintime('2025-06-15T12:30:45.000000001'::temporal.plaindatetime)
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, 1);
+}
+
+/// plaintime_to_plain_datetime combines PlainTime + PlainDate correctly.
+#[pg_test]
+fn plaintime_to_plaindatetime_basic() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaintime_to_plaindatetime(
+            '12:30:45'::temporal.plaintime,
+            '2025-06-15'::temporal.plaindate
+        )::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-06-15T12:30:45");
+}
+
+/// plaintime_to_plain_datetime takes its calendar from the PlainDate.
+#[pg_test]
+fn plaintime_to_plaindatetime_uses_date_calendar() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plaindatetime_calendar(
+            plaintime_to_plaindatetime(
+                '12:30:00'::temporal.plaintime,
+                make_plaindate(2025, 6, 15, 'japanese')
+            )
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "japanese");
 }

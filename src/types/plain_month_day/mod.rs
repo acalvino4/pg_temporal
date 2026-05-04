@@ -218,7 +218,7 @@ pub fn make_plainmonthday(
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_month(pmd: PlainMonthDay) -> i32 {
+pub fn plainmonthday_month(pmd: PlainMonthDay) -> i32 {
     i32::from(pmd.month)
 }
 
@@ -226,17 +226,17 @@ pub fn plain_month_day_month(pmd: PlainMonthDay) -> i32 {
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_day(pmd: PlainMonthDay) -> i32 {
+pub fn plainmonthday_day(pmd: PlainMonthDay) -> i32 {
     i32::from(pmd.day)
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_calendar(pmd: PlainMonthDay) -> String {
+pub fn plainmonthday_calendar(pmd: PlainMonthDay) -> String {
     crate::cal_index::name_of(pmd.cal_idx)
         .unwrap_or_else(|| {
-            error!("plain_month_day_calendar: unknown calendar index {}", pmd.cal_idx)
+            error!("plainmonthday_calendar: unknown calendar index {}", pmd.cal_idx)
         })
         .to_string()
 }

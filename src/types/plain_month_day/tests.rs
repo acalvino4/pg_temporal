@@ -50,7 +50,7 @@ fn pmd_roundtrip_christmas() {
 #[pg_test]
 fn pmd_accessor_month() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_month_day_month('06-15'::temporal.plainmonthday)",
+        "SELECT plainmonthday_month('06-15'::temporal.plainmonthday)",
     )
     .unwrap()
     .unwrap();
@@ -60,7 +60,7 @@ fn pmd_accessor_month() {
 #[pg_test]
 fn pmd_accessor_day() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_month_day_day('06-15'::temporal.plainmonthday)",
+        "SELECT plainmonthday_day('06-15'::temporal.plainmonthday)",
     )
     .unwrap()
     .unwrap();
@@ -70,7 +70,7 @@ fn pmd_accessor_day() {
 #[pg_test]
 fn pmd_accessor_calendar_defaults_to_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_month_day_calendar('06-15'::temporal.plainmonthday)",
+        "SELECT plainmonthday_calendar('06-15'::temporal.plainmonthday)",
     )
     .unwrap()
     .unwrap();
@@ -185,7 +185,7 @@ fn pmd_make_basic_roundtrip() {
 #[pg_test]
 fn pmd_make_calendar_stored() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_month_day_calendar(make_plainmonthday(6, 15, 'iso8601'))",
+        "SELECT plainmonthday_calendar(make_plainmonthday(6, 15, 'iso8601'))",
     )
     .unwrap()
     .unwrap();

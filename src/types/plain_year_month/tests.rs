@@ -32,7 +32,7 @@ fn pym_roundtrip_explicit_calendar_annotation() {
 #[pg_test]
 fn pym_accessor_year() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_year_month_year('2025-03'::temporal.plainyearmonth)",
+        "SELECT plainyearmonth_year('2025-03'::temporal.plainyearmonth)",
     )
     .unwrap()
     .unwrap();
@@ -42,7 +42,7 @@ fn pym_accessor_year() {
 #[pg_test]
 fn pym_accessor_month() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_year_month_month('2025-03'::temporal.plainyearmonth)",
+        "SELECT plainyearmonth_month('2025-03'::temporal.plainyearmonth)",
     )
     .unwrap()
     .unwrap();
@@ -52,7 +52,7 @@ fn pym_accessor_month() {
 #[pg_test]
 fn pym_accessor_calendar_defaults_to_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_year_month_calendar('2025-03'::temporal.plainyearmonth)",
+        "SELECT plainyearmonth_calendar('2025-03'::temporal.plainyearmonth)",
     )
     .unwrap()
     .unwrap();
@@ -149,7 +149,7 @@ fn pym_order_by() {
 #[pg_test]
 fn pym_add_one_month() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_year_month_add(
+        "SELECT plainyearmonth_add(
             '2025-03'::temporal.plainyearmonth,
             'P1M'::temporal.duration
         )::text",
@@ -163,7 +163,7 @@ fn pym_add_one_month() {
 #[pg_test]
 fn pym_add_month_rolls_year() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_year_month_add(
+        "SELECT plainyearmonth_add(
             '2025-12'::temporal.plainyearmonth,
             'P1M'::temporal.duration
         )::text",
@@ -177,7 +177,7 @@ fn pym_add_month_rolls_year() {
 #[pg_test]
 fn pym_subtract_one_month() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_year_month_subtract(
+        "SELECT plainyearmonth_subtract(
             '2025-03'::temporal.plainyearmonth,
             'P1M'::temporal.duration
         )::text",
@@ -191,7 +191,7 @@ fn pym_subtract_one_month() {
 #[pg_test]
 fn pym_until_three_months() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_year_month_until(
+        "SELECT plainyearmonth_until(
             '2025-01'::temporal.plainyearmonth,
             '2025-04'::temporal.plainyearmonth
         )::text",
@@ -205,7 +205,7 @@ fn pym_until_three_months() {
 #[pg_test]
 fn pym_since_three_months() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_year_month_since(
+        "SELECT plainyearmonth_since(
             '2025-04'::temporal.plainyearmonth,
             '2025-01'::temporal.plainyearmonth
         )::text",
@@ -234,7 +234,7 @@ fn pym_make_basic_roundtrip() {
 #[pg_test]
 fn pym_make_calendar_stored() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_year_month_calendar(make_plainyearmonth(2025, 6, 'iso8601'))",
+        "SELECT plainyearmonth_calendar(make_plainyearmonth(2025, 6, 'iso8601'))",
     )
     .unwrap()
     .unwrap();

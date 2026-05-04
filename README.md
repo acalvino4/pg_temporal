@@ -24,11 +24,11 @@ Sure, db's have timestamp types, and generally handle UTC offsets as well, but t
 | ------------------------------ | ------------------------------------------------------------ |
 | `temporal.zoneddatetime`       | Timezone-aware datetime (instant + IANA zone + calendar)     |
 | `temporal.instant`             | Absolute UTC instant, no timezone                            |
-| `temporal.plain_datetime`      | Calendar-local datetime, no timezone                         |
-| `temporal.plain_date`          | Calendar-local date, no time or timezone                     |
-| `temporal.plain_time`          | Wall-clock time, no date, timezone, or calendar              |
-| `temporal.plain_year_month`    | Calendar-local year and month, no day                        |
-| `temporal.plain_month_day`     | Calendar-local month and day, no year                        |
+| `temporal.plaindatetime`       | Calendar-local datetime, no timezone                         |
+| `temporal.plaindate`           | Calendar-local date, no time or timezone                     |
+| `temporal.plaintime`           | Wall-clock time, no date, timezone, or calendar              |
+| `temporal.plainyearmonth`      | Calendar-local year and month, no day                        |
+| `temporal.plainmonthday`       | Calendar-local month and day, no year                        |
 | `temporal.duration`            | Full vector duration (years → nanoseconds), no normalization |
 
 ## Docs

@@ -352,7 +352,7 @@ const fn has_calendar_components(d: Duration) -> bool {
 /// Only time-only durations (hours, minutes, seconds, milliseconds,
 /// microseconds, nanoseconds) can be added without a reference date.
 /// Raises an error if either argument contains calendar components (years,
-/// months, weeks, or days) — use `plain_datetime_add` or `zoned_datetime_add`
+/// months, weeks, or days) — use `plaindatetime_add` or `zoneddatetime_add`
 /// to add durations that include calendar components.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
@@ -375,8 +375,8 @@ pub fn duration_add(a: Duration, b: Duration) -> Duration {
 /// Only time-only durations (hours, minutes, seconds, milliseconds,
 /// microseconds, nanoseconds) can be subtracted without a reference date.
 /// Raises an error if either argument contains calendar components (years,
-/// months, weeks, or days) — use `plain_datetime_subtract` or
-/// `zoned_datetime_subtract` to subtract durations that include calendar
+/// months, weeks, or days) — use `plaindatetime_subtract` or
+/// `zoneddatetime_subtract` to subtract durations that include calendar
 /// components.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]

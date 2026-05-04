@@ -50,7 +50,7 @@ fn pt_roundtrip_nanosecond_precision() {
 #[pg_test]
 fn pt_accessor_hour() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_time_hour('11:16:10'::temporal.plaintime)",
+        "SELECT plaintime_hour('11:16:10'::temporal.plaintime)",
     )
     .unwrap()
     .unwrap();
@@ -60,7 +60,7 @@ fn pt_accessor_hour() {
 #[pg_test]
 fn pt_accessor_minute() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_time_minute('11:16:10'::temporal.plaintime)",
+        "SELECT plaintime_minute('11:16:10'::temporal.plaintime)",
     )
     .unwrap()
     .unwrap();
@@ -70,7 +70,7 @@ fn pt_accessor_minute() {
 #[pg_test]
 fn pt_accessor_second() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_time_second('11:16:10'::temporal.plaintime)",
+        "SELECT plaintime_second('11:16:10'::temporal.plaintime)",
     )
     .unwrap()
     .unwrap();
@@ -80,7 +80,7 @@ fn pt_accessor_second() {
 #[pg_test]
 fn pt_accessor_millisecond() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_time_millisecond('11:16:10.123456789'::temporal.plaintime)",
+        "SELECT plaintime_millisecond('11:16:10.123456789'::temporal.plaintime)",
     )
     .unwrap()
     .unwrap();
@@ -90,7 +90,7 @@ fn pt_accessor_millisecond() {
 #[pg_test]
 fn pt_accessor_microsecond() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_time_microsecond('11:16:10.123456789'::temporal.plaintime)",
+        "SELECT plaintime_microsecond('11:16:10.123456789'::temporal.plaintime)",
     )
     .unwrap()
     .unwrap();
@@ -100,7 +100,7 @@ fn pt_accessor_microsecond() {
 #[pg_test]
 fn pt_accessor_nanosecond() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_time_nanosecond('11:16:10.123456789'::temporal.plaintime)",
+        "SELECT plaintime_nanosecond('11:16:10.123456789'::temporal.plaintime)",
     )
     .unwrap()
     .unwrap();
@@ -197,7 +197,7 @@ fn pt_order_by() {
 #[pg_test]
 fn pt_add_one_hour() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_time_add(
+        "SELECT plaintime_add(
             '12:00:00'::temporal.plaintime,
             'PT1H'::temporal.duration
         )::text",
@@ -211,7 +211,7 @@ fn pt_add_one_hour() {
 #[pg_test]
 fn pt_subtract_one_hour() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_time_subtract(
+        "SELECT plaintime_subtract(
             '13:00:00'::temporal.plaintime,
             'PT1H'::temporal.duration
         )::text",
@@ -225,7 +225,7 @@ fn pt_subtract_one_hour() {
 #[pg_test]
 fn pt_add_wraps_midnight() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_time_add(
+        "SELECT plaintime_add(
             '23:00:00'::temporal.plaintime,
             'PT2H'::temporal.duration
         )::text",
@@ -239,7 +239,7 @@ fn pt_add_wraps_midnight() {
 #[pg_test]
 fn pt_until_two_hours() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_time_until(
+        "SELECT plaintime_until(
             '10:00:00'::temporal.plaintime,
             '12:00:00'::temporal.plaintime
         )::text",
@@ -253,7 +253,7 @@ fn pt_until_two_hours() {
 #[pg_test]
 fn pt_since_two_hours() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_time_since(
+        "SELECT plaintime_since(
             '12:00:00'::temporal.plaintime,
             '10:00:00'::temporal.plaintime
         )::text",
@@ -294,4 +294,77 @@ fn pt_make_with_sub_second() {
 #[should_panic(expected = "make_plaintime")]
 fn pt_make_invalid_hour_errors() {
     Spi::get_one::<String>("SELECT make_plaintime(25, 0, 0)::text").unwrap();
+}
+
+// -----------------------------------------------------------------------
+// Casts: time ↔ PlainTime
+// -----------------------------------------------------------------------
+
+/// time → PlainTime: text representation matches original time literal.
+#[pg_test]
+fn pg_cast_time_to_plaintime_basic() {
+    let r = Spi::get_one::<String>(
+        "SELECT '12:30:45'::time::temporal.plaintime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "12:30:45");
+}
+
+/// PlainTime → time → PlainTime round-trip preserves all fields.
+#[pg_test]
+fn pg_cast_plaintime_to_time_roundtrip() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT '12:30:45.123456'::temporal.plaintime
+           = '12:30:45.123456'::temporal.plaintime::time::temporal.plaintime",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// time → PlainTime preserves sub-second microseconds.
+#[pg_test]
+fn pg_cast_time_to_plaintime_microseconds() {
+    let us = Spi::get_one::<i32>(
+        "SELECT plaintime_microsecond('12:30:45.000123'::time::temporal.plaintime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(us, 123);
+}
+
+/// PlainTime → time: nanoseconds are truncated (time has only µs precision).
+#[pg_test]
+fn pg_cast_plaintime_to_time_ns_truncated() {
+    let ns = Spi::get_one::<i32>(
+        "SELECT plaintime_nanosecond(
+            make_plaintime(12, 30, 45, 0, 0, 999)::time::temporal.plaintime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, 0, "nanoseconds should be truncated to 0 after time round-trip");
+}
+
+/// Midnight (00:00:00) round-trips correctly.
+#[pg_test]
+fn pg_cast_time_to_plaintime_midnight() {
+    let r = Spi::get_one::<String>(
+        "SELECT '00:00:00'::time::temporal.plaintime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "00:00:00");
+}
+
+/// End-of-day value (23:59:59.999999) round-trips correctly.
+#[pg_test]
+fn pg_cast_time_to_plaintime_end_of_day() {
+    let r = Spi::get_one::<String>(
+        "SELECT '23:59:59.999999'::time::temporal.plaintime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(r.starts_with("23:59:59"), "got: {r}");
 }

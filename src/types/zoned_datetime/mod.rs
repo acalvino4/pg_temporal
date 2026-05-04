@@ -18,6 +18,7 @@ use temporal_rs::{
 use crate::gucs;
 use crate::provider::TZ_PROVIDER;
 use crate::types::duration::Duration;
+use crate::types::instant::Instant;
 
 // ---------------------------------------------------------------------------
 // Storage type
@@ -219,20 +220,20 @@ pub fn make_zoneddatetime(epoch_ns: &str, tz: &str, cal: &str) -> ZonedDateTime 
 /// Returns the timezone name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_timezone(zdt: ZonedDateTime) -> String {
+pub fn zoneddatetime_timezone(zdt: ZonedDateTime) -> String {
     let tz_idx = zdt.tz_idx;
     crate::tz_index::name_of(tz_idx)
-        .unwrap_or_else(|| error!("zoned_datetime_timezone: unknown timezone index {tz_idx}"))
+        .unwrap_or_else(|| error!("zoneddatetime_timezone: unknown timezone index {tz_idx}"))
         .to_string()
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_calendar(zdt: ZonedDateTime) -> String {
+pub fn zoneddatetime_calendar(zdt: ZonedDateTime) -> String {
     let cal_idx = zdt.cal_idx;
     crate::cal_index::name_of(cal_idx)
-        .unwrap_or_else(|| error!("zoned_datetime_calendar: unknown calendar index {cal_idx}"))
+        .unwrap_or_else(|| error!("zoneddatetime_calendar: unknown calendar index {cal_idx}"))
         .to_string()
 }
 
@@ -240,7 +241,7 @@ pub fn zoned_datetime_calendar(zdt: ZonedDateTime) -> String {
 /// SQL type; use `::numeric` for arithmetic).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_epoch_ns(zdt: ZonedDateTime) -> String {
+pub fn zoneddatetime_epoch_ns(zdt: ZonedDateTime) -> String {
     let ns = zdt.epoch_ns;
     ns.to_string()
 }
@@ -296,11 +297,11 @@ impl ZonedDateTime {
 /// wall-clock arithmetic.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_add(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
+pub fn zoneddatetime_add(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
     let result = zdt
         .to_temporal()
         .add_with_provider(&dur.to_temporal(), Some(Overflow::Constrain), &*TZ_PROVIDER)
-        .unwrap_or_else(|e| error!("zoned_datetime_add failed: {e}"));
+        .unwrap_or_else(|e| error!("zoneddatetime_add failed: {e}"));
     ZonedDateTime::from_temporal(&result)
 }
 
@@ -309,32 +310,72 @@ pub fn zoned_datetime_add(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
 /// wall-clock arithmetic.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_subtract(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
+pub fn zoneddatetime_subtract(zdt: ZonedDateTime, dur: Duration) -> ZonedDateTime {
     let result = zdt
         .to_temporal()
         .subtract_with_provider(&dur.to_temporal(), Some(Overflow::Constrain), &*TZ_PROVIDER)
-        .unwrap_or_else(|e| error!("zoned_datetime_subtract failed: {e}"));
+        .unwrap_or_else(|e| error!("zoneddatetime_subtract failed: {e}"));
     ZonedDateTime::from_temporal(&result)
 }
 
 /// Returns the duration elapsed from `other` to `zdt` (default unit: hours).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_since(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
+pub fn zoneddatetime_since(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
     let d = zdt
         .to_temporal()
         .since_with_provider(&other.to_temporal(), DifferenceSettings::default(), &*TZ_PROVIDER)
-        .unwrap_or_else(|e| error!("zoned_datetime_since failed: {e}"));
+        .unwrap_or_else(|e| error!("zoneddatetime_since failed: {e}"));
     Duration::from_temporal(&d)
 }
 
 /// Returns the duration from `zdt` to `other` (default unit: hours).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_until(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
+pub fn zoneddatetime_until(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration {
     let d = zdt
         .to_temporal()
         .until_with_provider(&other.to_temporal(), DifferenceSettings::default(), &*TZ_PROVIDER)
-        .unwrap_or_else(|e| error!("zoned_datetime_until failed: {e}"));
+        .unwrap_or_else(|e| error!("zoneddatetime_until failed: {e}"));
     Duration::from_temporal(&d)
+}
+
+// ---------------------------------------------------------------------------
+// Cross-type conversion functions
+// ---------------------------------------------------------------------------
+
+/// Convert a `ZonedDateTime` to an `Instant`.
+///
+/// The timezone and calendar annotations are dropped; the absolute point in
+/// time (nanoseconds since Unix epoch) is preserved exactly.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn zoneddatetime_to_instant(zdt: ZonedDateTime) -> Instant {
+    Instant { epoch_ns: zdt.epoch_ns }
+}
+
+/// Convert an `Instant` to a `ZonedDateTime` by supplying a timezone and
+/// optional calendar (defaults to `'iso8601'`).
+///
+/// Mirrors the Temporal spec's `Instant.toZonedDateTime({ timeZone, calendar })`.
+///
+/// Example:
+/// ```sql
+/// SELECT instant_to_zoneddatetime(now()::Instant, 'America/New_York');
+/// SELECT instant_to_zoneddatetime(now()::Instant, 'Asia/Tokyo', 'japanese');
+/// ```
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn instant_to_zoneddatetime(
+    inst: Instant,
+    tz: &str,
+    cal: default!(&str, "'iso8601'"),
+) -> ZonedDateTime {
+    let timezone = TimeZone::try_from_str_with_provider(tz, &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("instant_to_zoneddatetime: invalid timezone \"{tz}\": {e}"));
+    let calendar = Calendar::try_from_utf8(cal.as_bytes())
+        .unwrap_or_else(|e| error!("instant_to_zoneddatetime: invalid calendar \"{cal}\": {e}"));
+    let zdt = TemporalZdt::try_new_with_provider(inst.epoch_ns, timezone, calendar, &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("instant_to_zoneddatetime failed: {e}"));
+    ZonedDateTime::from_temporal(&zdt)
 }

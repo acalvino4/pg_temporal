@@ -31,7 +31,7 @@ fn pd_roundtrip_explicit_calendar_annotation() {
 #[pg_test]
 fn pd_accessor_year() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_date_year('2025-03-01'::temporal.plaindate)",
+        "SELECT plaindate_year('2025-03-01'::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -41,7 +41,7 @@ fn pd_accessor_year() {
 #[pg_test]
 fn pd_accessor_month() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_date_month('2025-03-01'::temporal.plaindate)",
+        "SELECT plaindate_month('2025-03-01'::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -51,7 +51,7 @@ fn pd_accessor_month() {
 #[pg_test]
 fn pd_accessor_day() {
     let v = Spi::get_one::<i32>(
-        "SELECT plain_date_day('2025-03-01'::temporal.plaindate)",
+        "SELECT plaindate_day('2025-03-01'::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -61,7 +61,7 @@ fn pd_accessor_day() {
 #[pg_test]
 fn pd_accessor_calendar_defaults_to_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_date_calendar('2025-03-01'::temporal.plaindate)",
+        "SELECT plaindate_calendar('2025-03-01'::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -158,7 +158,7 @@ fn pd_order_by() {
 #[pg_test]
 fn pd_add_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_date_add(
+        "SELECT plaindate_add(
             '2025-03-01'::temporal.plaindate,
             'P1D'::temporal.duration
         )::text",
@@ -172,7 +172,7 @@ fn pd_add_one_day() {
 #[pg_test]
 fn pd_subtract_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_date_subtract(
+        "SELECT plaindate_subtract(
             '2025-03-02'::temporal.plaindate,
             'P1D'::temporal.duration
         )::text",
@@ -186,7 +186,7 @@ fn pd_subtract_one_day() {
 #[pg_test]
 fn pd_until_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_date_until(
+        "SELECT plaindate_until(
             '2025-03-01'::temporal.plaindate,
             '2025-03-02'::temporal.plaindate
         )::text",
@@ -200,7 +200,7 @@ fn pd_until_one_day() {
 #[pg_test]
 fn pd_since_one_day() {
     let r = Spi::get_one::<String>(
-        "SELECT plain_date_since(
+        "SELECT plaindate_since(
             '2025-03-02'::temporal.plaindate,
             '2025-03-01'::temporal.plaindate
         )::text",
@@ -231,7 +231,7 @@ fn pd_roundtrip_japanese_calendar() {
 #[pg_test]
 fn pd_multi_calendar_accessor_returns_correct_name() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_date_calendar('2025-03-01[u-ca=japanese]'::temporal.plaindate)",
+        "SELECT plaindate_calendar('2025-03-01[u-ca=japanese]'::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -243,7 +243,7 @@ fn pd_multi_calendar_accessor_returns_correct_name() {
 #[pg_test]
 fn pd_year_accessor_returns_calendar_year_for_persian() {
     let year = Spi::get_one::<i32>(
-        "SELECT plain_date_year('2025-03-01[u-ca=persian]'::temporal.plaindate)",
+        "SELECT plaindate_year('2025-03-01[u-ca=persian]'::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -270,7 +270,7 @@ fn pd_make_basic_roundtrip() {
 #[pg_test]
 fn pd_make_calendar_stored() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_date_calendar(make_plaindate(2025, 6, 15, 'iso8601'))",
+        "SELECT plaindate_calendar(make_plaindate(2025, 6, 15, 'iso8601'))",
     )
     .unwrap()
     .unwrap();
@@ -303,7 +303,7 @@ fn pg_cast_date_to_plaindate_basic() {
 #[pg_test]
 fn pg_cast_date_to_plaindate_calendar_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT plain_date_calendar('2025-03-01'::date::temporal.plaindate)",
+        "SELECT plaindate_calendar('2025-03-01'::date::temporal.plaindate)",
     )
     .unwrap()
     .unwrap();
@@ -375,4 +375,62 @@ fn pg_cast_date_to_plaindate_feb29_leap() {
     .unwrap()
     .unwrap();
     assert_eq!(result, "2024-02-29");
+}
+
+// -----------------------------------------------------------------------
+// Cross-type conversions
+// -----------------------------------------------------------------------
+
+/// plaindate_to_plain_datetime with no time defaults to midnight.
+#[pg_test]
+fn pd_to_plaindatetime_defaults_to_midnight() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindate_to_plaindatetime('2025-06-15'::temporal.plaindate)::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-06-15T00:00:00");
+}
+
+/// plaindate_to_plain_datetime with an explicit time combines correctly.
+#[pg_test]
+fn pd_to_plaindatetime_with_time() {
+    let r = Spi::get_one::<String>(
+        "SELECT plaindate_to_plaindatetime(
+            '2025-06-15'::temporal.plaindate,
+            '12:30:45'::temporal.plaintime
+        )::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, "2025-06-15T12:30:45");
+}
+
+/// plaindate_to_plain_datetime preserves nanoseconds from the PlainTime.
+#[pg_test]
+fn pd_to_plaindatetime_preserves_nanoseconds() {
+    let ns = Spi::get_one::<i32>(
+        "SELECT plaindatetime_nanosecond(
+            plaindate_to_plaindatetime(
+                '2025-06-15'::temporal.plaindate,
+                make_plaintime(12, 30, 45, 0, 0, 7)
+            )
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, 7);
+}
+
+/// plaindate_to_plain_datetime preserves the calendar from the PlainDate.
+#[pg_test]
+fn pd_to_plaindatetime_preserves_calendar() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plaindatetime_calendar(
+            plaindate_to_plaindatetime(make_plaindate(2025, 6, 15, 'japanese'))
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "japanese");
 }

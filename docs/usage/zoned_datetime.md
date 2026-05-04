@@ -16,7 +16,7 @@ SELECT ts FROM events;
 -- 2025-03-01T11:16:10+09:00[Asia/Tokyo]
 
 -- Extract fields
-SELECT zoned_datetime_timezone(ts), zoned_datetime_epoch_ns(ts)::numeric
+SELECT zoneddatetime_timezone(ts), zoneddatetime_epoch_ns(ts)::numeric
 FROM events;
 ```
 
@@ -38,34 +38,34 @@ Output always includes the UTC offset, IANA annotation, and (for non-ISO calenda
 
 ## SQL functions
 
-### `zoned_datetime_timezone(zdt zoneddatetime) → text`
+### `zoneddatetime_timezone(zdt zoneddatetime) → text`
 
 Returns the IANA timezone identifier stored with the value. The identifier is stored as-is from the input string; alias resolution via `pg_temporal.alias_policy` is not yet active (see below).
 
 ```sql
-SELECT zoned_datetime_timezone(
+SELECT zoneddatetime_timezone(
   '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
 );
 -- Asia/Tokyo
 ```
 
-### `zoned_datetime_calendar(zdt zoneddatetime) → text`
+### `zoneddatetime_calendar(zdt zoneddatetime) → text`
 
 Returns the calendar identifier stored with the value.
 
 ```sql
-SELECT zoned_datetime_calendar(
+SELECT zoneddatetime_calendar(
   '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
 );
 -- iso8601
 ```
 
-### `zoned_datetime_epoch_ns(zdt zoneddatetime) → text`
+### `zoneddatetime_epoch_ns(zdt zoneddatetime) → text`
 
 Returns the UTC instant as nanoseconds since the Unix epoch. The value is returned as `text` because there is no native 128-bit integer SQL type; cast to `numeric` for arithmetic.
 
 ```sql
-SELECT zoned_datetime_epoch_ns(
+SELECT zoneddatetime_epoch_ns(
   '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
 )::numeric;
 -- 1740791770000000000
@@ -122,51 +122,51 @@ SELECT '2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime
 SELECT * FROM events ORDER BY ts;
 ```
 
-### `zoned_datetime_compare(a zoneddatetime, b zoneddatetime) → integer`
+### `zoneddatetime_cmp(a zoneddatetime, b zoneddatetime) → integer`
 
 Returns -1, 0, or 1.
 
 ## Arithmetic
 
-### `zoned_datetime_add(zdt zoneddatetime, dur duration) → zoneddatetime`
+### `zoneddatetime_add(zdt zoneddatetime, dur duration) → zoneddatetime`
 
 Adds a duration using DST-aware wall-clock arithmetic. Day-of-month overflow is clamped (`Constrain`): e.g. Jan 31 + P1M → Feb 28/29.
 
 ```sql
-SELECT zoned_datetime_add(
+SELECT zoneddatetime_add(
   '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
   'PT1H'::temporal.duration
 )::text;  -- 2025-03-01T01:00:00+00:00[UTC]
 ```
 
-### `zoned_datetime_subtract(zdt zoneddatetime, dur duration) → zoneddatetime`
+### `zoneddatetime_subtract(zdt zoneddatetime, dur duration) → zoneddatetime`
 
 Subtracts a duration using DST-aware wall-clock arithmetic.
 
 ```sql
-SELECT zoned_datetime_subtract(
+SELECT zoneddatetime_subtract(
   '2025-03-01T01:00:00+00:00[UTC]'::temporal.zoneddatetime,
   'PT1H'::temporal.duration
 )::text;  -- 2025-03-01T00:00:00+00:00[UTC]
 ```
 
-### `zoned_datetime_until(zdt zoneddatetime, other zoneddatetime) → duration`
+### `zoneddatetime_until(zdt zoneddatetime, other zoneddatetime) → duration`
 
 Returns the duration from `zdt` to `other`. The default largest unit is hours.
 
 ```sql
-SELECT zoned_datetime_until(
+SELECT zoneddatetime_until(
   '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
   '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime
 )::text;  -- PT2H
 ```
 
-### `zoned_datetime_since(zdt zoneddatetime, other zoneddatetime) → duration`
+### `zoneddatetime_since(zdt zoneddatetime, other zoneddatetime) → duration`
 
 Returns the duration elapsed from `other` to `zdt`. The default largest unit is hours.
 
 ```sql
-SELECT zoned_datetime_since(
+SELECT zoneddatetime_since(
   '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime,
   '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
 )::text;  -- PT2H
@@ -174,7 +174,7 @@ SELECT zoned_datetime_since(
 
 ## Multi-calendar support
 
-All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The instant is always stored as epoch nanoseconds; the calendar name is stored in the catalog alongside the timezone. `zoned_datetime_calendar` returns the stored calendar name; non-ISO annotations are preserved on output.
+All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. The instant is always stored as epoch nanoseconds; the calendar name is stored in the catalog alongside the timezone. `zoneddatetime_calendar` returns the stored calendar name; non-ISO annotations are preserved on output.
 
 ```sql
 -- Japanese calendar annotation round-trips
@@ -182,7 +182,7 @@ SELECT '2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]'::temporal.zoneddat
 -- 2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]
 
 -- The calendar accessor returns the stored name
-SELECT zoned_datetime_calendar(
+SELECT zoneddatetime_calendar(
   '2025-03-01T00:00:00+00:00[UTC][u-ca=persian]'::temporal.zoneddatetime
 );
 -- persian

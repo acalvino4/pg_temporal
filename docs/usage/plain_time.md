@@ -47,19 +47,19 @@ All numeric accessors return `integer`. Sub-second fields (`millisecond`, `micro
 
 | Function                             | Range | Description           |
 | ------------------------------------ | ----- | --------------------- |
-| `plain_time_hour(pt) → int`          | 0–23  | Hour of day           |
-| `plain_time_minute(pt) → int`        | 0–59  | Minute of hour        |
-| `plain_time_second(pt) → int`        | 0–59  | Second of minute      |
-| `plain_time_millisecond(pt) → int`   | 0–999 | Millisecond component |
-| `plain_time_microsecond(pt) → int`   | 0–999 | Microsecond component |
-| `plain_time_nanosecond(pt) → int`    | 0–999 | Nanosecond component  |
+| `plaintime_hour(pt) → int`          | 0–23  | Hour of day           |
+| `plaintime_minute(pt) → int`        | 0–59  | Minute of hour        |
+| `plaintime_second(pt) → int`        | 0–59  | Second of minute      |
+| `plaintime_millisecond(pt) → int`   | 0–999 | Millisecond component |
+| `plaintime_microsecond(pt) → int`   | 0–999 | Microsecond component |
+| `plaintime_nanosecond(pt) → int`    | 0–999 | Nanosecond component  |
 
 ```sql
 SELECT
-  plain_time_hour('14:30:01.002003004'::temporal.plaintime),
-  plain_time_millisecond('14:30:01.002003004'::temporal.plaintime),
-  plain_time_microsecond('14:30:01.002003004'::temporal.plaintime),
-  plain_time_nanosecond('14:30:01.002003004'::temporal.plaintime);
+  plaintime_hour('14:30:01.002003004'::temporal.plaintime),
+  plaintime_millisecond('14:30:01.002003004'::temporal.plaintime),
+  plaintime_microsecond('14:30:01.002003004'::temporal.plaintime),
+  plaintime_nanosecond('14:30:01.002003004'::temporal.plaintime);
 -- 14 | 2 | 3 | 4
 ```
 
@@ -75,7 +75,7 @@ SELECT '09:00:00'::temporal.plaintime
 SELECT * FROM schedule ORDER BY open_time;
 ```
 
-### `plain_time_compare(a plaintime, b plaintime) → integer`
+### `plaintime_cmp(a plaintime, b plaintime) → integer`
 
 Returns -1, 0, or 1.
 
@@ -83,45 +83,45 @@ Returns -1, 0, or 1.
 
 Time arithmetic **wraps around midnight** — adding 2 hours to `23:00:00` produces `01:00:00`. No date overflow is returned.
 
-### `plain_time_add(pt plaintime, dur duration) → plaintime`
+### `plaintime_add(pt plaintime, dur duration) → plaintime`
 
 Adds a duration to a plain time.
 
 ```sql
-SELECT plain_time_add(
+SELECT plaintime_add(
   '23:00:00'::temporal.plaintime,
   'PT2H'::temporal.duration
 )::text;  -- 01:00:00
 ```
 
-### `plain_time_subtract(pt plaintime, dur duration) → plaintime`
+### `plaintime_subtract(pt plaintime, dur duration) → plaintime`
 
 Subtracts a duration from a plain time.
 
 ```sql
-SELECT plain_time_subtract(
+SELECT plaintime_subtract(
   '09:30:00'::temporal.plaintime,
   'PT30M'::temporal.duration
 )::text;  -- 09:00:00
 ```
 
-### `plain_time_until(pt plaintime, other plaintime) → duration`
+### `plaintime_until(pt plaintime, other plaintime) → duration`
 
 Returns the duration from `pt` to `other`. The default largest unit is hours.
 
 ```sql
-SELECT plain_time_until(
+SELECT plaintime_until(
   '09:00:00'::temporal.plaintime,
   '17:00:00'::temporal.plaintime
 )::text;  -- PT8H
 ```
 
-### `plain_time_since(pt plaintime, other plaintime) → duration`
+### `plaintime_since(pt plaintime, other plaintime) → duration`
 
 Returns the duration elapsed from `other` to `pt`. The default largest unit is hours.
 
 ```sql
-SELECT plain_time_since(
+SELECT plaintime_since(
   '17:00:00'::temporal.plaintime,
   '09:00:00'::temporal.plaintime
 )::text;  -- PT8H

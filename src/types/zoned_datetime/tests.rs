@@ -54,7 +54,7 @@ fn roundtrip_nanosecond_precision() {
 #[pg_test]
 fn accessor_timezone_returns_iana_name() {
     let tz = Spi::get_one::<String>(
-        "SELECT zoned_datetime_timezone('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_timezone('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -64,7 +64,7 @@ fn accessor_timezone_returns_iana_name() {
 #[pg_test]
 fn accessor_calendar_defaults_to_iso8601() {
     let cal = Spi::get_one::<String>(
-        "SELECT zoned_datetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -75,7 +75,7 @@ fn accessor_calendar_defaults_to_iso8601() {
 #[pg_test]
 fn accessor_calendar_explicit_annotation() {
     let cal = Spi::get_one::<String>(
-        "SELECT zoned_datetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=iso8601]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=iso8601]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -90,7 +90,7 @@ fn accessor_calendar_explicit_annotation() {
 #[pg_test]
 fn epoch_ns_unix_epoch_is_zero() {
     let ns = Spi::get_one::<String>(
-        "SELECT zoned_datetime_epoch_ns('1970-01-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_epoch_ns('1970-01-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -102,12 +102,12 @@ fn epoch_ns_unix_epoch_is_zero() {
 #[pg_test]
 fn epoch_ns_same_instant_different_zones() {
     let ns_utc = Spi::get_one::<String>(
-        "SELECT zoned_datetime_epoch_ns('2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_epoch_ns('2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
     let ns_tokyo = Spi::get_one::<String>(
-        "SELECT zoned_datetime_epoch_ns('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_epoch_ns('2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -119,7 +119,7 @@ fn epoch_ns_same_instant_different_zones() {
 #[pg_test]
 fn epoch_ns_known_value() {
     let ns = Spi::get_one::<String>(
-        "SELECT zoned_datetime_epoch_ns('2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_epoch_ns('2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -282,7 +282,7 @@ fn zdt_order_by() {
 #[pg_test]
 fn add_one_hour_utc() {
     let r = Spi::get_one::<String>(
-        "SELECT zoned_datetime_add(
+        "SELECT zoneddatetime_add(
             '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
             'PT1H'::temporal.duration
         )::text",
@@ -296,7 +296,7 @@ fn add_one_hour_utc() {
 #[pg_test]
 fn subtract_one_hour_utc() {
     let r = Spi::get_one::<String>(
-        "SELECT zoned_datetime_subtract(
+        "SELECT zoneddatetime_subtract(
             '2025-03-01T01:00:00+00:00[UTC]'::temporal.zoneddatetime,
             'PT1H'::temporal.duration
         )::text",
@@ -310,7 +310,7 @@ fn subtract_one_hour_utc() {
 #[pg_test]
 fn until_two_hours() {
     let r = Spi::get_one::<String>(
-        "SELECT zoned_datetime_until(
+        "SELECT zoneddatetime_until(
             '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
             '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime
         )::text",
@@ -324,7 +324,7 @@ fn until_two_hours() {
 #[pg_test]
 fn since_two_hours() {
     let r = Spi::get_one::<String>(
-        "SELECT zoned_datetime_since(
+        "SELECT zoneddatetime_since(
             '2025-03-01T02:00:00+00:00[UTC]'::temporal.zoneddatetime,
             '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
         )::text",
@@ -369,7 +369,7 @@ fn roundtrip_persian_calendar() {
 #[pg_test]
 fn multi_calendar_accessor_returns_correct_name() {
     let cal = Spi::get_one::<String>(
-        "SELECT zoned_datetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]'::temporal.zoneddatetime)",
+        "SELECT zoneddatetime_calendar('2025-03-01T11:16:10+09:00[Asia/Tokyo][u-ca=japanese]'::temporal.zoneddatetime)",
     )
     .unwrap()
     .unwrap();
@@ -396,7 +396,7 @@ fn multi_calendar_different_calendar_not_equal() {
 #[pg_test]
 fn zdt_make_basic_epoch_roundtrip() {
     let ns = Spi::get_one::<String>(
-        "SELECT zoned_datetime_epoch_ns(make_zoneddatetime('1609459200000000000', 'UTC', 'iso8601'))",
+        "SELECT zoneddatetime_epoch_ns(make_zoneddatetime('1609459200000000000', 'UTC', 'iso8601'))",
     )
     .unwrap()
     .unwrap();
@@ -407,7 +407,7 @@ fn zdt_make_basic_epoch_roundtrip() {
 #[pg_test]
 fn zdt_make_timezone_stored() {
     let tz = Spi::get_one::<String>(
-        "SELECT zoned_datetime_timezone(make_zoneddatetime('0', 'America/New_York', 'iso8601'))",
+        "SELECT zoneddatetime_timezone(make_zoneddatetime('0', 'America/New_York', 'iso8601'))",
     )
     .unwrap()
     .unwrap();
@@ -418,7 +418,7 @@ fn zdt_make_timezone_stored() {
 #[pg_test]
 fn zdt_make_calendar_stored() {
     let cal = Spi::get_one::<String>(
-        "SELECT zoned_datetime_calendar(make_zoneddatetime('0', 'UTC', 'iso8601'))",
+        "SELECT zoneddatetime_calendar(make_zoneddatetime('0', 'UTC', 'iso8601'))",
     )
     .unwrap()
     .unwrap();
@@ -456,4 +456,111 @@ fn zdt_make_invalid_epoch_ns_errors() {
         "SELECT make_zoneddatetime('not_a_number', 'UTC', 'iso8601')::text",
     )
     .unwrap();
+}
+
+// -----------------------------------------------------------------------
+// Cross-type conversions
+// -----------------------------------------------------------------------
+
+/// zoneddatetime_to_instant preserves epoch_ns exactly.
+#[pg_test]
+fn zdt_to_instant_preserves_epoch_ns() {
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns(
+            zoneddatetime_to_instant(
+                make_zoneddatetime('1609459200000000001', 'America/New_York', 'iso8601')
+            )
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "1609459200000000001");
+}
+
+/// zoneddatetime_to_instant: different timezones with same epoch_ns yield the same Instant.
+#[pg_test]
+fn zdt_to_instant_timezone_independent() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT zoneddatetime_to_instant(
+                make_zoneddatetime('1609459200000000000', 'America/New_York', 'iso8601')
+            ) = zoneddatetime_to_instant(
+                make_zoneddatetime('1609459200000000000', 'Asia/Tokyo', 'iso8601')
+            )",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// instant_to_zoned_datetime round-trips epoch_ns through a timezone.
+#[pg_test]
+fn instant_to_zdt_roundtrip_epoch_ns() {
+    let ns = Spi::get_one::<String>(
+        "SELECT zoneddatetime_epoch_ns(
+            instant_to_zoneddatetime(
+                make_instant('1609459200000000000'),
+                'America/New_York'
+            )
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "1609459200000000000");
+}
+
+/// instant_to_zoned_datetime attaches the requested timezone.
+#[pg_test]
+fn instant_to_zdt_attaches_timezone() {
+    let tz = Spi::get_one::<String>(
+        "SELECT zoneddatetime_timezone(
+            instant_to_zoneddatetime(make_instant('0'), 'Asia/Tokyo')
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(tz, "Asia/Tokyo");
+}
+
+/// instant_to_zoned_datetime defaults to iso8601 calendar.
+#[pg_test]
+fn instant_to_zdt_default_calendar_iso8601() {
+    let cal = Spi::get_one::<String>(
+        "SELECT zoneddatetime_calendar(
+            instant_to_zoneddatetime(make_instant('0'), 'UTC')
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "iso8601");
+}
+
+/// instant_to_zoned_datetime respects an explicit non-ISO calendar.
+#[pg_test]
+fn instant_to_zdt_explicit_calendar() {
+    let cal = Spi::get_one::<String>(
+        "SELECT zoneddatetime_calendar(
+            instant_to_zoneddatetime(make_instant('0'), 'UTC', 'japanese')
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "japanese");
+}
+
+/// zoneddatetime_to_instant then instant_to_zoneddatetime round-trips.
+#[pg_test]
+fn zdt_instant_zdt_roundtrip() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT zoneddatetime_epoch_ns(
+                instant_to_zoneddatetime(
+                    zoneddatetime_to_instant(
+                        make_zoneddatetime('1609459200000000001', 'Europe/Paris', 'iso8601')
+                    ),
+                    'Europe/Paris'
+                )
+            ) = '1609459200000000001'",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
 }

@@ -20,7 +20,7 @@ SELECT name, date FROM holidays;
 -- Leap Day   | --02-29
 
 -- Extract fields
-SELECT plain_month_day_month(date), plain_month_day_day(date) FROM holidays;
+SELECT plainmonthday_month(date), plainmonthday_day(date) FROM holidays;
 -- 12 | 25
 -- 2  | 29
 ```
@@ -39,30 +39,30 @@ Output always uses the `--MM-DD` (double-dash) form. The `[u-ca=iso8601]` annota
 
 ## SQL functions
 
-### `plain_month_day_month(pmd plainmonthday) → integer`
+### `plainmonthday_month(pmd plainmonthday) → integer`
 
 Returns the calendar month (1-indexed).
 
 ```sql
-SELECT plain_month_day_month('--12-25'::temporal.plainmonthday);
+SELECT plainmonthday_month('--12-25'::temporal.plainmonthday);
 -- 12
 ```
 
-### `plain_month_day_day(pmd plainmonthday) → integer`
+### `plainmonthday_day(pmd plainmonthday) → integer`
 
 Returns the day of the month.
 
 ```sql
-SELECT plain_month_day_day('--12-25'::temporal.plainmonthday);
+SELECT plainmonthday_day('--12-25'::temporal.plainmonthday);
 -- 25
 ```
 
-### `plain_month_day_calendar(pmd plainmonthday) → text`
+### `plainmonthday_calendar(pmd plainmonthday) → text`
 
 Returns the calendar identifier stored with the value.
 
 ```sql
-SELECT plain_month_day_calendar('--12-25'::temporal.plainmonthday);
+SELECT plainmonthday_calendar('--12-25'::temporal.plainmonthday);
 -- iso8601
 ```
 
@@ -78,7 +78,7 @@ SELECT '--03-15'::temporal.plainmonthday
 SELECT * FROM holidays ORDER BY date;
 ```
 
-### `plain_month_day_compare(a plainmonthday, b plainmonthday) → integer`
+### `plainmonthday_cmp(a plainmonthday, b plainmonthday) → integer`
 
 Returns -1, 0, or 1.
 
@@ -107,6 +107,6 @@ Per the Temporal specification, `PlainMonthDay` does not support addition, subtr
 All calendars supported by the Temporal specification are accepted via the `[u-ca=…]` annotation on input. Fields are stored internally as ISO 8601; accessor functions return calendar-specific values when a non-ISO calendar is used.
 
 ```sql
-SELECT plain_month_day_month('--03-21[u-ca=persian]'::temporal.plainmonthday);
+SELECT plainmonthday_month('--03-21[u-ca=persian]'::temporal.plainmonthday);
 -- 1  (Farvardin 1, Nowruz — first month of the Persian calendar)
 ```

@@ -14,6 +14,8 @@ use temporal_rs::{
 };
 
 use crate::types::duration::Duration;
+use crate::types::plain_date::PlainDate;
+use crate::types::plain_time::PlainTime;
 
 // ---------------------------------------------------------------------------
 // Storage type
@@ -246,21 +248,21 @@ pub fn make_plaindatetime(
 /// Returns the calendar year (e.g. Persian 1403 for ISO 2025-03-01 with u-ca=persian).
 #[must_use]
 #[pg_extern(stable, parallel_safe)]
-pub fn plain_datetime_year(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_year(pdt: PlainDateTime) -> i32 {
     pdt.to_temporal().year()
 }
 
 /// Returns the calendar month (1-indexed within the calendar system).
 #[must_use]
 #[pg_extern(stable, parallel_safe)]
-pub fn plain_datetime_month(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_month(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.to_temporal().month())
 }
 
 /// Returns the calendar day-of-month.
 #[must_use]
 #[pg_extern(stable, parallel_safe)]
-pub fn plain_datetime_day(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_day(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.to_temporal().day())
 }
 
@@ -269,51 +271,51 @@ pub fn plain_datetime_day(pdt: PlainDateTime) -> i32 {
 #[allow(clippy::missing_const_for_fn)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_hour(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_hour(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.hour)
 }
 
 /// Returns the minute component (0–59).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_minute(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_minute(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.minute)
 }
 
 /// Returns the second component (0–59).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_second(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_second(pdt: PlainDateTime) -> i32 {
     i32::from(pdt.second)
 }
 
 /// Returns the millisecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_millisecond(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_millisecond(pdt: PlainDateTime) -> i32 {
     (pdt.subsecond_ns / 1_000_000) as i32
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_microsecond(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_microsecond(pdt: PlainDateTime) -> i32 {
     ((pdt.subsecond_ns % 1_000_000) / 1_000) as i32
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_nanosecond(pdt: PlainDateTime) -> i32 {
+pub fn plaindatetime_nanosecond(pdt: PlainDateTime) -> i32 {
     (pdt.subsecond_ns % 1_000) as i32
 }
 
 /// Returns the calendar name stored with this value.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_calendar(pdt: PlainDateTime) -> String {
+pub fn plaindatetime_calendar(pdt: PlainDateTime) -> String {
     crate::cal_index::name_of(pdt.cal_idx)
-        .unwrap_or_else(|| error!("plain_datetime_calendar: unknown calendar index {}", pdt.cal_idx))
+        .unwrap_or_else(|| error!("plaindatetime_calendar: unknown calendar index {}", pdt.cal_idx))
         .to_string()
 }
 
@@ -379,11 +381,11 @@ impl PlainDateTime {
 /// (e.g., Jan 31 + P1M → Feb 28/29).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_add(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
+pub fn plaindatetime_add(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
     let result = pdt
         .to_temporal()
         .add(&dur.to_temporal(), Some(Overflow::Constrain))
-        .unwrap_or_else(|e| error!("plain_datetime_add failed: {e}"));
+        .unwrap_or_else(|e| error!("plaindatetime_add failed: {e}"));
     PlainDateTime::from_temporal(&result)
 }
 
@@ -391,33 +393,33 @@ pub fn plain_datetime_add(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
 /// Uses `Constrain` overflow: day-of-month is clamped to the last valid day.
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_subtract(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
+pub fn plaindatetime_subtract(pdt: PlainDateTime, dur: Duration) -> PlainDateTime {
     let result = pdt
         .to_temporal()
         .subtract(&dur.to_temporal(), Some(Overflow::Constrain))
-        .unwrap_or_else(|e| error!("plain_datetime_subtract failed: {e}"));
+        .unwrap_or_else(|e| error!("plaindatetime_subtract failed: {e}"));
     PlainDateTime::from_temporal(&result)
 }
 
 /// Returns the duration elapsed from `other` to `pdt` (default unit: days).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_since(pdt: PlainDateTime, other: PlainDateTime) -> Duration {
+pub fn plaindatetime_since(pdt: PlainDateTime, other: PlainDateTime) -> Duration {
     let d = pdt
         .to_temporal()
         .since(&other.to_temporal(), DifferenceSettings::default())
-        .unwrap_or_else(|e| error!("plain_datetime_since failed: {e}"));
+        .unwrap_or_else(|e| error!("plaindatetime_since failed: {e}"));
     Duration::from_temporal(&d)
 }
 
 /// Returns the duration from `pdt` to `other` (default unit: days).
 #[must_use]
 #[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_until(pdt: PlainDateTime, other: PlainDateTime) -> Duration {
+pub fn plaindatetime_until(pdt: PlainDateTime, other: PlainDateTime) -> Duration {
     let d = pdt
         .to_temporal()
         .until(&other.to_temporal(), DifferenceSettings::default())
-        .unwrap_or_else(|e| error!("plain_datetime_until failed: {e}"));
+        .unwrap_or_else(|e| error!("plaindatetime_until failed: {e}"));
     Duration::from_temporal(&d)
 }
 
@@ -473,6 +475,45 @@ extension_sql!(
     CREATE CAST (PlainDateTime AS timestamp)
         WITH FUNCTION plaindatetime_to_timestamp(PlainDateTime);
     ",
-    name = "plain_datetime_casts",
+    name = "plaindatetime_casts",
     requires = [timestamp_to_plaindatetime, plaindatetime_to_timestamp],
 );
+
+// ---------------------------------------------------------------------------
+// Cross-type conversion functions
+// ---------------------------------------------------------------------------
+
+/// Convert a `PlainDateTime` to a `PlainDate` (drops the time-of-day component;
+/// the calendar annotation is preserved).
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn plaindatetime_to_plaindate(pdt: PlainDateTime) -> PlainDate {
+    PlainDate { year: pdt.year, month: pdt.month, day: pdt.day, cal_idx: pdt.cal_idx }
+}
+
+/// Convert a `PlainDateTime` to a `PlainTime` (drops the date component;
+/// the sub-second nanoseconds are preserved).
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn plaindatetime_to_plaintime(pdt: PlainDateTime) -> PlainTime {
+    PlainTime { subsecond_ns: pdt.subsecond_ns, hour: pdt.hour, minute: pdt.minute, second: pdt.second }
+}
+
+/// Combine a `PlainTime` and a `PlainDate` into a `PlainDateTime`.
+///
+/// Mirrors the Temporal spec's `PlainTime.prototype.toPlainDateTime(plainDate)`.
+/// The calendar annotation is taken from `pd`.
+///
+/// Example:
+/// ```sql
+/// SELECT plaintime_to_plaindatetime('12:30:00'::PlainTime, '2025-06-15'::PlainDate);
+/// ```
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn plaintime_to_plaindatetime(pt: PlainTime, pd: PlainDate) -> PlainDateTime {
+    let result = pd
+        .to_temporal()
+        .to_plain_date_time(Some(pt.to_temporal()))
+        .unwrap_or_else(|e| error!("plaintime_to_plaindatetime failed: {e}"));
+    PlainDateTime::from_temporal(&result)
+}
