@@ -12,13 +12,14 @@ Known places with this issue:
 ## Key commands
 
 - Build/check (works in sandboxed terminal): `cargo check`
-- Test (requires full-access terminal bc of an internal command postgres uses to start): `cargo pgrx test pg18`
-- Single test: `cargo pgrx test pg18 <test_name>`
-- Binary path: `.bin/rust-1.93.1/cargo-pgrx/0.17.0/bin/cargo-pgrx` (via cargo-run-bin)
+- Test matrix (requires full-access terminal bc of an internal command postgres uses to start): `cargo pgrx test all --no-default-features > /tmp/pg_temporal_test_matrix.txt 2>&1`
+- Single version test: `cargo pgrx test <pg_major> > /tmp/pg_temporal_test_output.txt 2>&1`
+- Single test: `cargo pgrx test <pg_major> <test_name> > /tmp/pg_temporal_test_output.txt 2>&1`
+- Binary path: `.bin/rust-1.93.1/cargo-pgrx/0.18.0/bin/cargo-pgrx` (via cargo-run-bin)
 
 ## Tech notes
 
-- pgrx 0.17.0: `PgVarlenaInOutFuncs`, `#[bikeshed_postgres_type_manually_impl_from_into_datum]` (standalone attr, NOT inside `#[pgrx(...)]`)
+- pgrx 0.18.0: `PgVarlenaInOutFuncs`, `#[bikeshed_postgres_type_manually_impl_from_into_datum]` (standalone attr, NOT inside `#[pgrx(...)]`)
 - Four types: Instant, ZonedDateTime, PlainDateTime, Duration — all use compact binary `PgVarlena<T>` on-disk storage
 - Build-time generated indices: `$OUT_DIR/tz_index.rs` (598 IANA TZ IDs) and `$OUT_DIR/cal_index.rs` (17 calendars)
 - Timezone list: `src/tz_canonical_list.txt` (append-only)

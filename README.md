@@ -46,7 +46,7 @@ Sure, db's have timestamp types, and generally handle UTC offsets as well, but t
 
 ## Implementation
 
-Built with [pgrx](https://github.com/pgcentralfoundation/pgrx) (Rust ↔ PostgreSQL FFI) and [temporal_rs](https://github.com/boa-dev/temporal) (Temporal spec rust implementation). Targets PostgreSQL 18+ at the moment.
+Built with [pgrx](https://github.com/pgcentralfoundation/pgrx) (Rust ↔ PostgreSQL FFI) and [temporal_rs](https://github.com/boa-dev/temporal) (Temporal spec rust implementation). Supports PostgreSQL 16, 17, and 18.
 
 ## Thanks
 

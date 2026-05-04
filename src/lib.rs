@@ -1,5 +1,15 @@
 use pgrx::prelude::*;
 
+#[cfg(not(any(feature = "pg16", feature = "pg17", feature = "pg18")))]
+compile_error!("One PostgreSQL major version feature must be enabled: pg16, pg17, or pg18.");
+
+#[cfg(any(
+    all(feature = "pg16", feature = "pg17"),
+    all(feature = "pg16", feature = "pg18"),
+    all(feature = "pg17", feature = "pg18"),
+))]
+compile_error!("PostgreSQL major version features are mutually exclusive; enable exactly one of pg16, pg17, or pg18.");
+
 ::pgrx::pg_module_magic!();
 
 pub mod gucs;

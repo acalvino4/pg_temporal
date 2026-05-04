@@ -5,7 +5,7 @@
 | Tool          | Install                                                                    |
 | ------------- | -------------------------------------------------------------------------- |
 | Rust 1.93.1   | `brew install rustup && rustup-init -y` (pinned via `rust-toolchain.toml`) |
-| PostgreSQL 18 | `brew install postgresql@18`                                               |
+| PostgreSQL 16, 17, or 18 | `brew install postgresql@16` (or `@17`, `@18`)                    |
 | cargo-run-bin | `cargo install cargo-run-bin` (the only globally-installed cargo tool)     |
 
 After cloning, install project-local binaries:
@@ -20,10 +20,10 @@ This reads `[package.metadata.bin]` from `Cargo.toml` and caches binaries under 
 
 ```sh
 # Build / type-check
-cargo check --features pg18
+cargo check --no-default-features --features <pg_major>
 
 # Run tests
-cargo pgrx test pg18
+cargo pgrx test <pg_major>
 
 # Format (in place)
 cargo fmt
@@ -32,17 +32,19 @@ cargo fmt
 cargo fmt --check
 
 # Lint
-cargo clippy --features pg18 -- -D warnings
+cargo clippy --no-default-features --features <pg_major> -- -D warnings
 
 # Generate SQL schema (sanity check)
-cargo pgrx schema pg18
+cargo pgrx schema <pg_major>
 
-# Install extension into local PG18 for manual testing
-cargo pgrx install --features pg18
+# Install extension into your local PostgreSQL instance for manual testing
+cargo pgrx install --no-default-features --features <pg_major>
 
 # Package extension for distribution
-cargo pgrx package --features pg18
+cargo pgrx package --no-default-features --features <pg_major>
 ```
+
+Supported `<pg_major>` values: `pg16`, `pg17`, `pg18` for Cargo feature flags, and `pg16`, `pg17`, `pg18` as the corresponding `cargo pgrx` major selector.
 
 ## Standards
 
@@ -50,11 +52,11 @@ Every commit must satisfy all of the following:
 
 **Build**
 
-- `cargo check --features pg18` exits 0.
+- `cargo check --no-default-features --features <pg_major>` exits 0.
 
 **Lint**
 
-- `cargo clippy --features pg18 -- -D warnings` exits 0.
+- `cargo clippy --no-default-features --features <pg_major> -- -D warnings` exits 0.
 - No `#[allow(...)]` suppressions without a comment explaining why.
 
 **Format**
@@ -63,7 +65,7 @@ Every commit must satisfy all of the following:
 
 **Tests**
 
-- `cargo pgrx test pg18` exits 0.
+- `cargo pgrx test <pg_major>` exits 0.
 - New features require tests covering: happy path, error/rejection cases, round-trip I/O.
 
 **Docs**
@@ -129,4 +131,4 @@ pg_temporal/
 - `rust-toolchain.toml` pins an exact version. `channel = "stable"` was deliberately avoided — it gives no reproducibility guarantee.
 - The extension schema is `temporal`, not `pg_temporal`. Schema names starting with `pg_` are reserved for PostgreSQL system schemas and cannot be created even by superusers. The extension package is still named `pg_temporal`.
 - PostgreSQL type names are case-folded to lowercase. `#[derive(PostgresType)]` on a struct named `ZonedDateTime` creates a SQL type called `zoneddatetime` (not `zoned_datetime`). Always verify type names against `cargo pgrx schema` output, not the Rust struct name.
-- `pg_test::postgresql_conf_options()` in `src/lib.rs` adds entries to `target/test-pgdata/18/postgresql.auto.conf`. This is how the `temporal` schema is added to `search_path` for all test sessions. If you modify this function, delete `target/test-pgdata/` to force reinitialization, since pgrx only writes the file when the data directory is first created.
+- `pg_test::postgresql_conf_options()` in `src/lib.rs` adds entries to `target/test-pgdata/<major>/postgresql.auto.conf`. This is how the `temporal` schema is added to `search_path` for all test sessions. If you modify this function, delete `target/test-pgdata/` to force reinitialization, since pgrx only writes the file when the data directory is first created.

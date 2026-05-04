@@ -18,8 +18,8 @@ All project binary tools (currently just `cargo-pgrx`) are declared in `[package
 
 _Considered: `mise` (polyglot version manager). Avoided because cargo-run-bin is more Rust-ecosystem-native and keeps tooling entirely within `Cargo.toml`._
 
-**Targeting PostgreSQL 18+ only**
-PG18 is the current stable release. The `[features]` table only includes `pg18`; earlier version feature flags were removed. Adding support for older versions later is straightforward if needed.
+**Supporting PostgreSQL 16, 17, and 18**
+The crate now exposes `pg16`, `pg17`, and `pg18` feature flags and intentionally has no default PostgreSQL version. Build and test commands must choose exactly one major version explicitly, which avoids silently targeting the wrong server version.
 
 **`rust-toolchain.toml` pinned to `1.93.1`**
 Ensures reproducible builds across contributors and CI. Effective floor is actually Rust 1.85 (required by edition 2024 in pgrx's own workspace), but we pin to the version we've verified works. Bump manually when pgrx requires it.

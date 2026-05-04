@@ -1,12 +1,12 @@
 # Quickstart
 
 > [!WARNING]
-> - Has not been tested on postgres <18 or windows yet.
+> - Windows has not been tested yet.
 > - This is not a guide to the Temporal spec — see the [Temporal documentation](https://tc39.es/proposal-temporal/docs/) for full type definitions if you are unfamiliar.
 
 ## Prerequisites
 
-- **PostgreSQL 18** — On macOS via Homebrew: `brew install postgresql`. You may also need to add to path with `brew link postgresql`
+- **PostgreSQL 16, 17, or 18** — On macOS via Homebrew: `brew install postgresql@18` (or `@17`, `@16`)
 - **Rust 1.93.1** — via [rustup](https://rustup.rs/). `rust-toolchain.toml` ensures correct version gets installed.
 - **cargo-run-bin** — `cargo install cargo-run-bin`
 - Install project dependencies - `cargo bin --install`
@@ -14,8 +14,8 @@
 ## Installation
 
 ```sh
-# Build the extension from source and install into your local PostgreSQL 18
-cargo pgrx install --features pg18
+# Build the extension from source and install into your local PostgreSQL instance
+cargo pgrx install --no-default-features --features pg18
 
 # Start an interactive psql session with the extension auto-loaded
 cargo pgrx run pg18
@@ -28,6 +28,8 @@ CREATE EXTENSION pg_temporal;
 SET search_path = temporal, "$user", public;
 ALTER DATABASE pg_temporal SET search_path = temporal, "$user", public;
 ```
+
+Replace `pg18` above with `pg16` or `pg17` if you are targeting those supported PostgreSQL majors instead.
 
 ## Basic storage and retrieval
 

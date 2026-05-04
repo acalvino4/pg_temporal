@@ -34,11 +34,3 @@ No `.github/workflows/` — no automated build, lint, test, or packaging on push
 
 **No PGXN packaging or release artifacts.**
 No `META.json`, no pre-built binaries, no release automation. `cargo pgrx package` is documented but never run in CI.
-
-### Lower priority
-
-**`pg18` hardcoded as default Cargo feature.**
-`default = ["pg18"]` means missing `--features` silently targets PG18 — a footgun if PG16/17 support is added later.
-
-**Only PostgreSQL 18 is supported.**
-No `pg16`/`pg17` feature flags. Locks out any production database not on PG18. A production extension typically supports the last 3+ major versions.

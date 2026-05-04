@@ -253,6 +253,7 @@ fn pmd_hash_equal_values_same_hash() {
 /// must hash identically, because `iso_year` does not participate in `PartialEq`.
 #[test]
 fn pmd_hash_iso_year_excluded() {
+    use crate::types::plain_month_day::PlainMonthDay;
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 

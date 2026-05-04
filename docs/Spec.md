@@ -101,7 +101,7 @@ Current GUCs:
 
 - No SQL-backed timezone or calendar catalog tables.
 - No implicit coercion intended to mimic PostgreSQL's native timestamp behavior.
-- Currently targets PostgreSQL 18 via the `pg18` feature.
+- Supports PostgreSQL 16, 17, and 18 via mutually-exclusive Cargo features.
 
 ## 8. Standards Alignment
 
