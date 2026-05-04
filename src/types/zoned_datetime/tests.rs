@@ -182,7 +182,7 @@ fn reject_input_wrong_offset_for_zone() {
 #[pg_test]
 fn compare_same_value_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT zoned_datetime_compare(
+        "SELECT zoneddatetime_cmp(
             '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
             '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime
         )",
@@ -196,7 +196,7 @@ fn compare_same_value_is_zero() {
 #[pg_test]
 fn compare_earlier_less_than_later() {
     let r = Spi::get_one::<i32>(
-        "SELECT zoned_datetime_compare(
+        "SELECT zoneddatetime_cmp(
             '2025-03-01T00:00:00+00:00[UTC]'::temporal.zoneddatetime,
             '2025-03-02T00:00:00+00:00[UTC]'::temporal.zoneddatetime
         )",
@@ -210,7 +210,7 @@ fn compare_earlier_less_than_later() {
 #[pg_test]
 fn compare_same_instant_different_zone_not_equal() {
     let r = Spi::get_one::<i32>(
-        "SELECT zoned_datetime_compare(
+        "SELECT zoneddatetime_cmp(
             '2025-03-01T02:16:10+00:00[UTC]'::temporal.zoneddatetime,
             '2025-03-01T11:16:10+09:00[Asia/Tokyo]'::temporal.zoneddatetime
         )",

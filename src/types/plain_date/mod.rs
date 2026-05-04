@@ -6,7 +6,6 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
-use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, PlainDate as TemporalPd,
@@ -26,10 +25,11 @@ use crate::types::duration::Duration;
 //   cal_idx  – compact calendar index (see cal_index module)
 //
 // Layout (field order chosen for alignment): i32 + 3×u8 = 7 bytes.
+// Field declaration order must match intended sort priority — #[derive(Ord)] depends on it.
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainDate {
@@ -255,112 +255,6 @@ impl PlainDate {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two plain dates by ISO date fields
-/// and, as a tiebreaker, by calendar index.
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_compare(a: PlainDate, b: PlainDate) -> i32 {
-    match (a.year, a.month, a.day)
-        .cmp(&(b.year, b.month, b.day))
-        .then_with(|| a.cal_idx.cmp(&b.cal_idx))
-    {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_lt(a: PlainDate, b: PlainDate) -> bool {
-    plain_date_compare(a, b) < 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_le(a: PlainDate, b: PlainDate) -> bool {
-    plain_date_compare(a, b) <= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_eq(a: PlainDate, b: PlainDate) -> bool {
-    plain_date_compare(a, b) == 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_ne(a: PlainDate, b: PlainDate) -> bool {
-    plain_date_compare(a, b) != 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_ge(a: PlainDate, b: PlainDate) -> bool {
-    plain_date_compare(a, b) >= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_date_gt(a: PlainDate, b: PlainDate) -> bool {
-    plain_date_compare(a, b) > 0
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = PlainDate, RIGHTARG = PlainDate,
-        FUNCTION = plain_date_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = PlainDate, RIGHTARG = PlainDate,
-        FUNCTION = plain_date_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = PlainDate, RIGHTARG = PlainDate,
-        FUNCTION = plain_date_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = PlainDate, RIGHTARG = PlainDate,
-        FUNCTION = plain_date_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = PlainDate, RIGHTARG = PlainDate,
-        FUNCTION = plain_date_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = PlainDate, RIGHTARG = PlainDate,
-        FUNCTION = plain_date_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS plain_date_btree_ops DEFAULT FOR TYPE PlainDate USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  plain_date_compare(PlainDate, PlainDate);
-    ",
-    name = "plain_date_comparison_operators",
-    requires = [
-        plain_date_lt,
-        plain_date_le,
-        plain_date_eq,
-        plain_date_ne,
-        plain_date_ge,
-        plain_date_gt
-    ],
-);
 
 // ---------------------------------------------------------------------------
 // Arithmetic

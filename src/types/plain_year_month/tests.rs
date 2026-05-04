@@ -78,7 +78,7 @@ fn pym_reject_input_garbage() {
 #[pg_test]
 fn pym_compare_same_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_year_month_compare(
+        "SELECT plainyearmonth_cmp(
             '2025-03'::temporal.plainyearmonth,
             '2025-03'::temporal.plainyearmonth
         )",
@@ -92,7 +92,7 @@ fn pym_compare_same_is_zero() {
 #[pg_test]
 fn pym_compare_less() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_year_month_compare(
+        "SELECT plainyearmonth_cmp(
             '2025-01'::temporal.plainyearmonth,
             '2025-03'::temporal.plainyearmonth
         )",

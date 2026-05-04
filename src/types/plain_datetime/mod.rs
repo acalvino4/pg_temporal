@@ -30,7 +30,7 @@ use crate::types::duration::Duration;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainDateTime {
@@ -42,6 +42,20 @@ pub struct PlainDateTime {
     pub(crate) minute: u8,
     pub(crate) second: u8,
     pub(crate) cal_idx: u8,
+}
+
+impl PartialOrd for PlainDateTime {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PlainDateTime {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.year, self.month, self.day, self.hour, self.minute, self.second, self.subsecond_ns)
+            .cmp(&(other.year, other.month, other.day, other.hour, other.minute, other.second, other.subsecond_ns))
+            .then_with(|| self.cal_idx.cmp(&other.cal_idx))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -355,113 +369,6 @@ impl PlainDateTime {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two plain datetimes by ISO date/time fields
-/// and, as a tiebreaker, by calendar index (which preserves lexicographic
-/// calendar-name ordering since the cal_index list is alphabetically sorted).
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_compare(a: PlainDateTime, b: PlainDateTime) -> i32 {
-    match (a.year, a.month, a.day, a.hour, a.minute, a.second, a.subsecond_ns)
-        .cmp(&(b.year, b.month, b.day, b.hour, b.minute, b.second, b.subsecond_ns))
-        .then_with(|| a.cal_idx.cmp(&b.cal_idx))
-    {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_lt(a: PlainDateTime, b: PlainDateTime) -> bool {
-    plain_datetime_compare(a, b) < 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_le(a: PlainDateTime, b: PlainDateTime) -> bool {
-    plain_datetime_compare(a, b) <= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_eq(a: PlainDateTime, b: PlainDateTime) -> bool {
-    plain_datetime_compare(a, b) == 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_ne(a: PlainDateTime, b: PlainDateTime) -> bool {
-    plain_datetime_compare(a, b) != 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_ge(a: PlainDateTime, b: PlainDateTime) -> bool {
-    plain_datetime_compare(a, b) >= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_datetime_gt(a: PlainDateTime, b: PlainDateTime) -> bool {
-    plain_datetime_compare(a, b) > 0
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = PlainDateTime, RIGHTARG = PlainDateTime,
-        FUNCTION = plain_datetime_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = PlainDateTime, RIGHTARG = PlainDateTime,
-        FUNCTION = plain_datetime_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = PlainDateTime, RIGHTARG = PlainDateTime,
-        FUNCTION = plain_datetime_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = PlainDateTime, RIGHTARG = PlainDateTime,
-        FUNCTION = plain_datetime_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = PlainDateTime, RIGHTARG = PlainDateTime,
-        FUNCTION = plain_datetime_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = PlainDateTime, RIGHTARG = PlainDateTime,
-        FUNCTION = plain_datetime_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS plain_datetime_btree_ops DEFAULT FOR TYPE PlainDateTime USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  plain_datetime_compare(PlainDateTime, PlainDateTime);
-    ",
-    name = "plain_datetime_comparison_operators",
-    requires = [
-        plain_datetime_lt,
-        plain_datetime_le,
-        plain_datetime_eq,
-        plain_datetime_ne,
-        plain_datetime_ge,
-        plain_datetime_gt
-    ],
-);
 
 // ---------------------------------------------------------------------------
 // Arithmetic

@@ -120,7 +120,7 @@ fn instant_reject_input_garbage() {
 #[pg_test]
 fn instant_compare_same_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT instant_compare(
+        "SELECT instant_cmp(
             '1970-01-01T00:00:00Z'::temporal.instant,
             '1970-01-01T00:00:00Z'::temporal.instant
         )",
@@ -134,7 +134,7 @@ fn instant_compare_same_is_zero() {
 #[pg_test]
 fn instant_compare_less() {
     let r = Spi::get_one::<i32>(
-        "SELECT instant_compare(
+        "SELECT instant_cmp(
             '1970-01-01T00:00:00Z'::temporal.instant,
             '1970-01-01T01:00:00Z'::temporal.instant
         )",

@@ -6,7 +6,6 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
-use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, PlainYearMonth as TemporalPym,
@@ -27,10 +26,11 @@ use crate::types::duration::Duration;
 //   cal_idx  – compact calendar index (see cal_index module)
 //
 // Layout: i32 + 2×u8 = 6 bytes.
+// Field declaration order must match intended sort priority — #[derive(Ord)] depends on it.
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainYearMonth {
@@ -257,112 +257,6 @@ impl PlainYearMonth {
         Self { year, month, cal_idx }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two plain year-months by ISO year/month fields
-/// and, as a tiebreaker, by calendar index.
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_compare(a: PlainYearMonth, b: PlainYearMonth) -> i32 {
-    match (a.year, a.month)
-        .cmp(&(b.year, b.month))
-        .then_with(|| a.cal_idx.cmp(&b.cal_idx))
-    {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_lt(a: PlainYearMonth, b: PlainYearMonth) -> bool {
-    plain_year_month_compare(a, b) < 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_le(a: PlainYearMonth, b: PlainYearMonth) -> bool {
-    plain_year_month_compare(a, b) <= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_eq(a: PlainYearMonth, b: PlainYearMonth) -> bool {
-    plain_year_month_compare(a, b) == 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_ne(a: PlainYearMonth, b: PlainYearMonth) -> bool {
-    plain_year_month_compare(a, b) != 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_ge(a: PlainYearMonth, b: PlainYearMonth) -> bool {
-    plain_year_month_compare(a, b) >= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_year_month_gt(a: PlainYearMonth, b: PlainYearMonth) -> bool {
-    plain_year_month_compare(a, b) > 0
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth,
-        FUNCTION = plain_year_month_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth,
-        FUNCTION = plain_year_month_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth,
-        FUNCTION = plain_year_month_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth,
-        FUNCTION = plain_year_month_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth,
-        FUNCTION = plain_year_month_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = PlainYearMonth, RIGHTARG = PlainYearMonth,
-        FUNCTION = plain_year_month_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS plain_year_month_btree_ops DEFAULT FOR TYPE PlainYearMonth USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  plain_year_month_compare(PlainYearMonth, PlainYearMonth);
-    ",
-    name = "plain_year_month_comparison_operators",
-    requires = [
-        plain_year_month_lt,
-        plain_year_month_le,
-        plain_year_month_eq,
-        plain_year_month_ne,
-        plain_year_month_ge,
-        plain_year_month_gt
-    ],
-);
 
 // ---------------------------------------------------------------------------
 // Arithmetic

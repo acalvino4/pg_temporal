@@ -6,7 +6,6 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
-use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, TimeZone, ZonedDateTime as TemporalZdt,
@@ -35,10 +34,11 @@ use crate::types::duration::Duration;
 //   cal_idx   – compact calendar index (see cal_index module)
 //
 // Layout: 16 + 2 + 1 = 19 bytes.
+// Field declaration order must match intended sort priority — #[derive(Ord)] depends on it.
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct ZonedDateTime {
@@ -286,123 +286,6 @@ impl ZonedDateTime {
         Self { epoch_ns, tz_idx, cal_idx }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two zoned datetimes.
-/// Primary key: epoch nanoseconds; tiebreakers: timezone index, calendar index.
-/// Two values are equal only when instant, timezone, and calendar all match
-/// (Temporal identity equality).
-///
-/// Note: `Temporal.ZonedDateTime.compare()` returns 0 for same-instant different-zone
-/// values, but PostgreSQL btree requires `compare = 0 ↔ equals`, so identity semantics
-/// are used throughout. Same-instant different-zone ordering is unspecified by the
-/// Temporal spec; index ordering is a valid stable choice within that ambiguity.
-#[allow(clippy::doc_markdown)] // "PostgreSQL" is a proper noun, not a code identifier
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_compare(a: ZonedDateTime, b: ZonedDateTime) -> i32 {
-    let (a_epoch_ns, a_tz_idx, a_cal_idx) = (a.epoch_ns, a.tz_idx, a.cal_idx);
-    let (b_epoch_ns, b_tz_idx, b_cal_idx) = (b.epoch_ns, b.tz_idx, b.cal_idx);
-    match a_epoch_ns
-        .cmp(&b_epoch_ns)
-        .then_with(|| a_tz_idx.cmp(&b_tz_idx))
-        .then_with(|| a_cal_idx.cmp(&b_cal_idx))
-    {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_lt(a: ZonedDateTime, b: ZonedDateTime) -> bool {
-    zoned_datetime_compare(a, b) < 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_le(a: ZonedDateTime, b: ZonedDateTime) -> bool {
-    zoned_datetime_compare(a, b) <= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_eq(a: ZonedDateTime, b: ZonedDateTime) -> bool {
-    zoned_datetime_compare(a, b) == 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_ne(a: ZonedDateTime, b: ZonedDateTime) -> bool {
-    zoned_datetime_compare(a, b) != 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_ge(a: ZonedDateTime, b: ZonedDateTime) -> bool {
-    zoned_datetime_compare(a, b) >= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn zoned_datetime_gt(a: ZonedDateTime, b: ZonedDateTime) -> bool {
-    zoned_datetime_compare(a, b) > 0
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
-        FUNCTION = zoned_datetime_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
-        FUNCTION = zoned_datetime_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
-        FUNCTION = zoned_datetime_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
-        FUNCTION = zoned_datetime_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
-        FUNCTION = zoned_datetime_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = ZonedDateTime, RIGHTARG = ZonedDateTime,
-        FUNCTION = zoned_datetime_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS zoned_datetime_btree_ops DEFAULT FOR TYPE ZonedDateTime USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  zoned_datetime_compare(ZonedDateTime, ZonedDateTime);
-    ",
-    name = "zoned_datetime_comparison_operators",
-    requires = [
-        zoned_datetime_lt,
-        zoned_datetime_le,
-        zoned_datetime_eq,
-        zoned_datetime_ne,
-        zoned_datetime_ge,
-        zoned_datetime_gt
-    ],
-);
 
 // ---------------------------------------------------------------------------
 // Arithmetic

@@ -30,7 +30,7 @@ use crate::types::duration::Duration;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainTime {
@@ -38,6 +38,19 @@ pub struct PlainTime {
     pub(crate) hour: u8,
     pub(crate) minute: u8,
     pub(crate) second: u8,
+}
+
+impl PartialOrd for PlainTime {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PlainTime {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.hour, self.minute, self.second, self.subsecond_ns)
+            .cmp(&(other.hour, other.minute, other.second, other.subsecond_ns))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -270,110 +283,6 @@ impl PlainTime {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two plain times by their field values.
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_compare(a: PlainTime, b: PlainTime) -> i32 {
-    match (a.hour, a.minute, a.second, a.subsecond_ns)
-        .cmp(&(b.hour, b.minute, b.second, b.subsecond_ns))
-    {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_lt(a: PlainTime, b: PlainTime) -> bool {
-    plain_time_compare(a, b) < 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_le(a: PlainTime, b: PlainTime) -> bool {
-    plain_time_compare(a, b) <= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_eq(a: PlainTime, b: PlainTime) -> bool {
-    plain_time_compare(a, b) == 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_ne(a: PlainTime, b: PlainTime) -> bool {
-    plain_time_compare(a, b) != 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_ge(a: PlainTime, b: PlainTime) -> bool {
-    plain_time_compare(a, b) >= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_time_gt(a: PlainTime, b: PlainTime) -> bool {
-    plain_time_compare(a, b) > 0
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = PlainTime, RIGHTARG = PlainTime,
-        FUNCTION = plain_time_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = PlainTime, RIGHTARG = PlainTime,
-        FUNCTION = plain_time_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = PlainTime, RIGHTARG = PlainTime,
-        FUNCTION = plain_time_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = PlainTime, RIGHTARG = PlainTime,
-        FUNCTION = plain_time_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = PlainTime, RIGHTARG = PlainTime,
-        FUNCTION = plain_time_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = PlainTime, RIGHTARG = PlainTime,
-        FUNCTION = plain_time_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS plain_time_btree_ops DEFAULT FOR TYPE PlainTime USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  plain_time_compare(PlainTime, PlainTime);
-    ",
-    name = "plain_time_comparison_operators",
-    requires = [
-        plain_time_lt,
-        plain_time_le,
-        plain_time_eq,
-        plain_time_ne,
-        plain_time_ge,
-        plain_time_gt
-    ],
-);
 
 // ---------------------------------------------------------------------------
 // Arithmetic

@@ -1,5 +1,4 @@
 use pgrx::prelude::*;
-use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
     Instant as TemporalInstant,
@@ -24,7 +23,7 @@ use crate::types::duration::Duration;
 // ---------------------------------------------------------------------------
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct Instant {
@@ -193,115 +192,6 @@ impl Instant {
         Self { epoch_ns: i.epoch_nanoseconds().as_i128() }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two instants by epoch nanoseconds.
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_compare(a: Instant, b: Instant) -> i32 {
-    match a.epoch_ns.cmp(&b.epoch_ns) {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_lt(a: Instant, b: Instant) -> bool {
-    a.epoch_ns < b.epoch_ns
-}
-
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_le(a: Instant, b: Instant) -> bool {
-    a.epoch_ns <= b.epoch_ns
-}
-
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_eq(a: Instant, b: Instant) -> bool {
-    a.epoch_ns == b.epoch_ns
-}
-
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_ne(a: Instant, b: Instant) -> bool {
-    a.epoch_ns != b.epoch_ns
-}
-
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_ge(a: Instant, b: Instant) -> bool {
-    a.epoch_ns >= b.epoch_ns
-}
-
-// pgrx's #[pg_extern] macro generates unsafe blocks internally; const fn is not compatible.
-#[allow(clippy::missing_const_for_fn)]
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn instant_gt(a: Instant, b: Instant) -> bool {
-    a.epoch_ns > b.epoch_ns
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = Instant, RIGHTARG = Instant,
-        FUNCTION = instant_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = Instant, RIGHTARG = Instant,
-        FUNCTION = instant_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = Instant, RIGHTARG = Instant,
-        FUNCTION = instant_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = Instant, RIGHTARG = Instant,
-        FUNCTION = instant_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = Instant, RIGHTARG = Instant,
-        FUNCTION = instant_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = Instant, RIGHTARG = Instant,
-        FUNCTION = instant_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS instant_btree_ops DEFAULT FOR TYPE Instant USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  instant_compare(Instant, Instant);
-    ",
-    name = "instant_comparison_operators",
-    requires = [instant_lt, instant_le, instant_eq, instant_ne, instant_ge, instant_gt],
-);
 
 // ---------------------------------------------------------------------------
 // Arithmetic

@@ -179,7 +179,7 @@ fn pdt_reject_input_garbage() {
 #[pg_test]
 fn pdt_compare_same_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_datetime_compare(
+        "SELECT plaindatetime_cmp(
             '2025-03-01T12:00:00'::temporal.plaindatetime,
             '2025-03-01T12:00:00'::temporal.plaindatetime
         )",
@@ -193,7 +193,7 @@ fn pdt_compare_same_is_zero() {
 #[pg_test]
 fn pdt_compare_less() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_datetime_compare(
+        "SELECT plaindatetime_cmp(
             '2025-03-01T00:00:00'::temporal.plaindatetime,
             '2025-03-02T00:00:00'::temporal.plaindatetime
         )",

@@ -103,7 +103,7 @@ fn pmd_reject_invalid_date() {
 #[pg_test]
 fn pmd_compare_same_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_month_day_compare(
+        "SELECT plainmonthday_cmp(
             '06-15'::temporal.plainmonthday,
             '06-15'::temporal.plainmonthday
         )",
@@ -117,7 +117,7 @@ fn pmd_compare_same_is_zero() {
 #[pg_test]
 fn pmd_compare_less() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_month_day_compare(
+        "SELECT plainmonthday_cmp(
             '01-01'::temporal.plainmonthday,
             '06-15'::temporal.plainmonthday
         )",

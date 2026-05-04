@@ -126,7 +126,7 @@ fn pt_reject_input_garbage() {
 #[pg_test]
 fn pt_compare_same_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_time_compare(
+        "SELECT plaintime_cmp(
             '12:00:00'::temporal.plaintime,
             '12:00:00'::temporal.plaintime
         )",
@@ -140,7 +140,7 @@ fn pt_compare_same_is_zero() {
 #[pg_test]
 fn pt_compare_less() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_time_compare(
+        "SELECT plaintime_cmp(
             '00:00:00'::temporal.plaintime,
             '01:00:00'::temporal.plaintime
         )",

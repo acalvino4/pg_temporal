@@ -87,7 +87,7 @@ fn pd_reject_input_garbage() {
 #[pg_test]
 fn pd_compare_same_is_zero() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_date_compare(
+        "SELECT plaindate_cmp(
             '2025-03-01'::temporal.plaindate,
             '2025-03-01'::temporal.plaindate
         )",
@@ -101,7 +101,7 @@ fn pd_compare_same_is_zero() {
 #[pg_test]
 fn pd_compare_less() {
     let r = Spi::get_one::<i32>(
-        "SELECT plain_date_compare(
+        "SELECT plaindate_cmp(
             '2025-03-01'::temporal.plaindate,
             '2025-03-02'::temporal.plaindate
         )",

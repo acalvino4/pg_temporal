@@ -30,7 +30,7 @@ use temporal_rs::{
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType)]
+#[derive(Debug, Clone, Copy, PostgresType, PostgresEq, PostgresOrd)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainMonthDay {
@@ -38,6 +38,28 @@ pub struct PlainMonthDay {
     pub(crate) month: u8,
     pub(crate) day: u8,
     pub(crate) cal_idx: u8,
+}
+
+impl PartialEq for PlainMonthDay {
+    fn eq(&self, other: &Self) -> bool {
+        self.month == other.month && self.day == other.day && self.cal_idx == other.cal_idx
+    }
+}
+
+impl Eq for PlainMonthDay {}
+
+impl PartialOrd for PlainMonthDay {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PlainMonthDay {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.month, self.day)
+            .cmp(&(other.month, other.day))
+            .then_with(|| self.cal_idx.cmp(&other.cal_idx))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -256,112 +278,3 @@ impl PlainMonthDay {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Comparison functions
-//
-// PlainMonthDay is ordered by ISO month/day (ignoring the reference year),
-// with calendar index as a tiebreaker.
-// ---------------------------------------------------------------------------
-
-/// Returns -1, 0, or 1 comparing two plain month-days by ISO month/day fields
-/// and, as a tiebreaker, by calendar index.
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_compare(a: PlainMonthDay, b: PlainMonthDay) -> i32 {
-    match (a.month, a.day)
-        .cmp(&(b.month, b.day))
-        .then_with(|| a.cal_idx.cmp(&b.cal_idx))
-    {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_lt(a: PlainMonthDay, b: PlainMonthDay) -> bool {
-    plain_month_day_compare(a, b) < 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_le(a: PlainMonthDay, b: PlainMonthDay) -> bool {
-    plain_month_day_compare(a, b) <= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_eq(a: PlainMonthDay, b: PlainMonthDay) -> bool {
-    plain_month_day_compare(a, b) == 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_ne(a: PlainMonthDay, b: PlainMonthDay) -> bool {
-    plain_month_day_compare(a, b) != 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_ge(a: PlainMonthDay, b: PlainMonthDay) -> bool {
-    plain_month_day_compare(a, b) >= 0
-}
-
-#[must_use]
-#[pg_extern(immutable, parallel_safe)]
-pub fn plain_month_day_gt(a: PlainMonthDay, b: PlainMonthDay) -> bool {
-    plain_month_day_compare(a, b) > 0
-}
-
-extension_sql!(
-    r"
-    CREATE OPERATOR < (
-        LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay,
-        FUNCTION = plain_month_day_lt,
-        COMMUTATOR = >, NEGATOR = >=
-    );
-    CREATE OPERATOR <= (
-        LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay,
-        FUNCTION = plain_month_day_le,
-        COMMUTATOR = >=, NEGATOR = >
-    );
-    CREATE OPERATOR = (
-        LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay,
-        FUNCTION = plain_month_day_eq,
-        COMMUTATOR = =, NEGATOR = <>
-    );
-    CREATE OPERATOR <> (
-        LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay,
-        FUNCTION = plain_month_day_ne,
-        COMMUTATOR = <>, NEGATOR = =
-    );
-    CREATE OPERATOR >= (
-        LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay,
-        FUNCTION = plain_month_day_ge,
-        COMMUTATOR = <=, NEGATOR = <
-    );
-    CREATE OPERATOR > (
-        LEFTARG = PlainMonthDay, RIGHTARG = PlainMonthDay,
-        FUNCTION = plain_month_day_gt,
-        COMMUTATOR = <, NEGATOR = <=
-    );
-    CREATE OPERATOR CLASS plain_month_day_btree_ops DEFAULT FOR TYPE PlainMonthDay USING btree AS
-        OPERATOR 1  <,
-        OPERATOR 2  <=,
-        OPERATOR 3  =,
-        OPERATOR 4  >=,
-        OPERATOR 5  >,
-        FUNCTION 1  plain_month_day_compare(PlainMonthDay, PlainMonthDay);
-    ",
-    name = "plain_month_day_comparison_operators",
-    requires = [
-        plain_month_day_lt,
-        plain_month_day_le,
-        plain_month_day_eq,
-        plain_month_day_ne,
-        plain_month_day_ge,
-        plain_month_day_gt
-    ],
-);
