@@ -411,3 +411,40 @@ pub fn plain_date_until(pd: PlainDate, other: PlainDate) -> Duration {
         .unwrap_or_else(|e| error!("plain_date_until failed: {e}"));
     Duration::from_temporal(&d)
 }
+
+// ---------------------------------------------------------------------------
+// Explicit casts: date ↔ PlainDate
+// ---------------------------------------------------------------------------
+
+/// Cast a `date` to a `PlainDate`.
+///
+/// The ISO 8601 calendar is assigned. Range and field validity are delegated
+/// to `temporal_rs`.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn date_to_plaindate(d: Date) -> PlainDate {
+    let pd = TemporalPd::try_new_iso(d.year(), d.month(), d.day())
+        .unwrap_or_else(|e| error!("date_to_plaindate: {e}"));
+    PlainDate::from_temporal(&pd)
+}
+
+/// Cast a `PlainDate` to a `date`.
+///
+/// The calendar annotation is dropped; ISO 8601 fields are used.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn plaindate_to_date(pd: PlainDate) -> Date {
+    Date::new(pd.year, pd.month, pd.day)
+        .unwrap_or_else(|e| error!("plaindate_to_date: out of range: {e:?}"))
+}
+
+extension_sql!(
+    r"
+    CREATE CAST (date AS PlainDate)
+        WITH FUNCTION date_to_plaindate(date);
+    CREATE CAST (PlainDate AS date)
+        WITH FUNCTION plaindate_to_date(PlainDate);
+    ",
+    name = "plain_date_casts",
+    requires = [date_to_plaindate, plaindate_to_date],
+);

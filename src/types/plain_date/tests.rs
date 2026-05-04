@@ -283,3 +283,96 @@ fn pd_make_calendar_stored() {
 fn pd_make_invalid_date_errors() {
     Spi::get_one::<String>("SELECT make_plaindate(2025, 2, 30)::text").unwrap();
 }
+
+// -----------------------------------------------------------------------
+// Casts: date ↔ PlainDate
+// -----------------------------------------------------------------------
+
+/// Basic cast: date → PlainDate text matches expected ISO 8601 string.
+#[pg_test]
+fn pg_cast_date_to_plaindate_basic() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01'::date::temporal.plaindate::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "2025-03-01");
+}
+
+/// The ISO 8601 calendar is assigned after casting from date.
+#[pg_test]
+fn pg_cast_date_to_plaindate_calendar_iso8601() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plain_date_calendar('2025-03-01'::date::temporal.plaindate)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "iso8601");
+}
+
+/// PlainDate → date round-trip: the original date value is recovered.
+#[pg_test]
+fn pg_cast_plaindate_to_date_basic() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT '2025-03-01'::date = '2025-03-01'::temporal.plaindate::date",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// Full date → PlainDate → date round-trip.
+#[pg_test]
+fn pg_cast_date_roundtrip() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT '2025-03-01'::date
+          = '2025-03-01'::date::temporal.plaindate::date",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// Pre-epoch date (before 1970-01-01) survives the round-trip.
+#[pg_test]
+fn pg_cast_date_to_plaindate_pre_epoch() {
+    let result = Spi::get_one::<String>(
+        "SELECT '1960-06-15'::date::temporal.plaindate::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "1960-06-15");
+}
+
+/// Jan 31 (last day in a 31-day month) round-trips without off-by-one errors.
+#[pg_test]
+fn pg_cast_date_to_plaindate_end_of_month() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-01-31'::date::temporal.plaindate::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "2025-01-31");
+}
+
+/// Feb 28 in a non-leap year is valid.
+#[pg_test]
+fn pg_cast_date_to_plaindate_feb28_non_leap() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2023-02-28'::date::temporal.plaindate::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "2023-02-28");
+}
+
+/// Feb 29 in a leap year is valid.
+#[pg_test]
+fn pg_cast_date_to_plaindate_feb29_leap() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2024-02-29'::date::temporal.plaindate::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "2024-02-29");
+}

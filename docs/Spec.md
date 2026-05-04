@@ -98,3 +98,15 @@ Catalogs
 pg_temporal.timezone_catalog → canonical tzdb IDs, OIDs, aliases
 
 pg_temporal.calendar_catalog → calendar OIDs, names
+
+## Key properties
+
+- **Nanosecond precision** throughout
+- **Identity equality** for `zoned_datetime`: two values are equal only if instant, zone, and calendar all match
+- **Explicit conversions only** — no implicit casts from native PG types
+- **Cluster-wide configuration** via GUCs: default disambiguation strategy, timezone alias policy
+- **Standards compatibility**
+  - [TC39 Temporal](https://tc39.es/proposal-temporal/) — type semantics, identity equality, disambiguation rules
+  - [RFC 9557 / IXDTF](https://www.rfc-editor.org/rfc/rfc9557) — text format for all I/O
+  - [IANA TZDB](https://www.iana.org/time-zones) — timezone data, bundled at compile time
+- **Bundled TZDB** — no runtime data files required

@@ -443,3 +443,131 @@ fn pdt_make_calendar_stored() {
 fn pdt_make_invalid_date_errors() {
     Spi::get_one::<String>("SELECT make_plaindatetime(2025, 2, 30, 0, 0, 0)::text").unwrap();
 }
+
+// -----------------------------------------------------------------------
+// Casts: timestamp ↔ PlainDateTime
+// -----------------------------------------------------------------------
+
+/// Basic round-trip: timestamp → PlainDateTime text matches.
+#[pg_test]
+fn pg_cast_timestamp_to_plaindatetime_basic() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01 11:16:10'::timestamp::temporal.plaindatetime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "2025-03-01T11:16:10");
+}
+
+/// Microseconds are correctly split into millisecond + microsecond fields.
+/// This guards against the pgrx microseconds() field-interpretation hazard.
+#[pg_test]
+fn pg_cast_timestamp_to_plaindatetime_microseconds_parsed() {
+    let ms = Spi::get_one::<i32>(
+        "SELECT plain_datetime_millisecond(
+            '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    let us = Spi::get_one::<i32>(
+        "SELECT plain_datetime_microsecond(
+            '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    let ns = Spi::get_one::<i32>(
+        "SELECT plain_datetime_nanosecond(
+            '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ms, 123, "millisecond");
+    assert_eq!(us, 456, "microsecond");
+    assert_eq!(ns, 0, "nanosecond");
+}
+
+/// Microseconds survive the full timestamp → PlainDateTime → timestamp round-trip.
+#[pg_test]
+fn pg_cast_timestamp_microsecond_roundtrip() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT EXTRACT(MICROSECONDS FROM '2025-01-01 10:20:30.123456'::timestamp)
+          = EXTRACT(MICROSECONDS FROM
+              '2025-01-01 10:20:30.123456'::timestamp::temporal.plaindatetime::timestamp)",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// Midnight round-trips cleanly.
+#[pg_test]
+fn pg_cast_timestamp_to_plaindatetime_midnight() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2025-03-01 00:00:00'::timestamp::temporal.plaindatetime::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "2025-03-01T00:00:00");
+}
+
+/// The ISO 8601 calendar is assigned after casting from timestamp.
+#[pg_test]
+fn pg_cast_timestamp_to_plaindatetime_calendar_iso8601() {
+    let cal = Spi::get_one::<String>(
+        "SELECT plain_datetime_calendar(
+            '2025-03-01 11:16:10'::timestamp::temporal.plaindatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(cal, "iso8601");
+}
+
+/// PlainDateTime → timestamp round-trip preserves date and time fields.
+#[pg_test]
+fn pg_cast_plaindatetime_to_timestamp_basic() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT '2025-03-01 11:16:10'::timestamp
+          = '2025-03-01T11:16:10'::temporal.plaindatetime::timestamp",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// Sub-microsecond nanoseconds are truncated (not rounded) when casting
+/// PlainDateTime → timestamp. The nanosecond field of the re-parsed
+/// PlainDateTime must be zero, and the microsecond field must not have
+/// been rounded up.
+///
+/// The boundary case: subsecond_ns = 1_999_999 (1999 µs + 999 ns).
+/// Without explicit truncation, passing 0.001999999 s to make_timestamp
+/// could round to 2000 µs. We assert it stays at 1999 µs.
+#[pg_test]
+fn pg_cast_plaindatetime_to_timestamp_sub_micro_truncated() {
+    let ns = Spi::get_one::<i32>(
+        "SELECT plain_datetime_nanosecond(
+            '2025-01-01T10:20:30.000000001'::temporal.plaindatetime
+                ::timestamp
+                ::temporal.plaindatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, 0);
+
+    // Boundary: 1999 µs + 999 ns must truncate to 1999 µs, not round to 2000 µs.
+    let us = Spi::get_one::<i32>(
+        "SELECT plain_datetime_microsecond(
+            make_plaindatetime(2025, 1, 1, 10, 20, 30, 1, 999, 999)
+                ::timestamp
+                ::temporal.plaindatetime
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(us, 999, "expected truncation to 999 µs, not rounding to 1000");
+}

@@ -615,3 +615,76 @@ pub fn duration_subtract_plain(a: Duration, b: Duration, relative_to: PlainDateT
         .unwrap_or_else(|e| error!("duration_subtract_plain (until) failed: {e}"));
     Duration::from_temporal(&result)
 }
+
+// ---------------------------------------------------------------------------
+// Explicit casts: interval ↔ Duration
+// ---------------------------------------------------------------------------
+
+/// Cast a PostgreSQL `interval` to a `Duration`.
+///
+/// `interval` stores three fields: `months`, `days`, and `microseconds`.
+/// Months map directly; the sub-day time is expanded into hours, minutes,
+/// seconds, and microseconds, preserving the sign of the value.
+///
+/// A PostgreSQL `interval` can have fields of mixed sign (e.g.,
+/// `'1 month -2 days'::interval`), which is not a valid Temporal Duration.
+/// Such values are rejected with an error.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn interval_to_duration(iv: Interval) -> Duration {
+    let months = iv.months() as i64;
+    let days = iv.days() as i64;
+    let total_us = iv.micros(); // i64, can be negative
+    // Split into hours / minutes / seconds / microseconds with the same sign.
+    let (hours, rem_us) = (total_us / 3_600_000_000, total_us % 3_600_000_000);
+    let (minutes, rem_us) = (rem_us / 60_000_000, rem_us % 60_000_000);
+    let (seconds, rem_us) = (rem_us / 1_000_000, rem_us % 1_000_000);
+    // Route through TemporalDuration::new() for sign-uniformity validation.
+    let td = TemporalDuration::new(0, months, 0, days, hours, minutes, seconds, 0, rem_us as i128, 0)
+        .unwrap_or_else(|e| error!("interval_to_duration: mixed-sign interval is not a valid Temporal Duration: {e}"));
+    Duration::from_temporal(&td)
+}
+
+/// Cast a `Duration` to a PostgreSQL `interval`.
+///
+/// The Temporal vector is collapsed:
+///   - `years × 12 + months` → `interval` months field
+///   - `weeks × 7 + days`    → `interval` days field
+///   - remaining time fields  → `interval` microseconds (nanoseconds truncated)
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn duration_to_interval(d: Duration) -> Interval {
+    let months: i32 = d.years
+        .checked_mul(12)
+        .and_then(|y| y.checked_add(d.months))
+        .and_then(|m| i32::try_from(m).ok())
+        .unwrap_or_else(|| error!("duration_to_interval: months value out of range for interval"));
+    let days: i32 = d.weeks
+        .checked_mul(7)
+        .and_then(|w| w.checked_add(d.days))
+        .and_then(|d| i32::try_from(d).ok())
+        .unwrap_or_else(|| error!("duration_to_interval: days value out of range for interval"));
+    let micros: i64 = (|| -> Option<i64> {
+        let h = d.hours.checked_mul(3_600_000_000)?;
+        let m = d.minutes.checked_mul(60_000_000)?;
+        let s = d.seconds.checked_mul(1_000_000)?;
+        let ms = d.milliseconds.checked_mul(1_000)?;
+        let us = i64::try_from(d.microseconds).ok()?;
+        let ns = i64::try_from(d.nanoseconds / 1_000).ok()?;
+        h.checked_add(m)?.checked_add(s)?.checked_add(ms)?.checked_add(us)?.checked_add(ns)
+    })()
+    .unwrap_or_else(|| error!("duration_to_interval: time value out of range for interval"));
+    Interval::new(months, days, micros)
+        .unwrap_or_else(|e| error!("duration out of range for interval: {e:?}"))
+}
+
+extension_sql!(
+    r"
+    CREATE CAST (interval AS Duration)
+        WITH FUNCTION interval_to_duration(interval);
+    CREATE CAST (Duration AS interval)
+        WITH FUNCTION duration_to_interval(Duration);
+    ",
+    name = "duration_casts",
+    requires = [interval_to_duration, duration_to_interval],
+);

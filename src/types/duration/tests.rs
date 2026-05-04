@@ -421,3 +421,168 @@ fn dur_subtract_zoned_time_components() {
     .unwrap();
     assert!(r.contains("PT6H"), "expected PT6H, got: {r}");
 }
+
+// -----------------------------------------------------------------------
+// Casts: interval ↔ Duration
+// -----------------------------------------------------------------------
+
+/// Time-only interval (no months or days) → Duration text matches ISO 8601.
+#[pg_test]
+fn pg_cast_interval_to_duration_time_only() {
+    let result = Spi::get_one::<String>(
+        "SELECT '2 hours 30 minutes'::interval::temporal.duration::text",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(result, "PT2H30M");
+}
+
+/// Days-only interval maps to the `days` Duration field (not weeks).
+#[pg_test]
+fn pg_cast_interval_to_duration_days() {
+    let days = Spi::get_one::<i64>(
+        "SELECT duration_days('3 days'::interval::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(days, 3);
+}
+
+/// A '2 years 3 months' interval is stored as 27 months internally by PG,
+/// so the Duration months field must be 27.
+#[pg_test]
+fn pg_cast_interval_to_duration_months() {
+    let months = Spi::get_one::<i64>(
+        "SELECT duration_months('2 years 3 months'::interval::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(months, 27);
+}
+
+/// Full interval (months + days + time) produces the correct Duration fields.
+#[pg_test]
+fn pg_cast_interval_to_duration_full() {
+    let months = Spi::get_one::<i64>(
+        "SELECT duration_months('1 month 2 days 3 hours'::interval::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    let days = Spi::get_one::<i64>(
+        "SELECT duration_days('1 month 2 days 3 hours'::interval::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    let hours = Spi::get_one::<i64>(
+        "SELECT duration_hours('1 month 2 days 3 hours'::interval::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(months, 1, "months");
+    assert_eq!(days, 2, "days");
+    assert_eq!(hours, 3, "hours");
+}
+
+/// Negative interval maps to a negative Duration.
+#[pg_test]
+fn pg_cast_interval_to_duration_negative() {
+    let hours = Spi::get_one::<i64>(
+        "SELECT duration_hours('-2 hours'::interval::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(hours, -2);
+}
+
+/// Microseconds within a time-only interval are promoted to µs in the Duration.
+#[pg_test]
+fn pg_cast_interval_to_duration_microseconds() {
+    let us_str = Spi::get_one::<String>(
+        "SELECT duration_microseconds(
+            '0.000456'::interval::temporal.duration
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(us_str, "456");
+}
+
+/// Duration → interval: years×12 + months collapse into the interval months field.
+/// P1Y6M has years=1, months=6; the expected interval months = 18.
+#[pg_test]
+fn pg_cast_duration_to_interval_years_collapse() {
+    let year_part = Spi::get_one::<f64>(
+        "SELECT EXTRACT(YEAR FROM 'P1Y6M'::temporal.duration::interval)::float8",
+    )
+    .unwrap()
+    .unwrap();
+    let month_part = Spi::get_one::<f64>(
+        "SELECT EXTRACT(MONTH FROM 'P1Y6M'::temporal.duration::interval)::float8",
+    )
+    .unwrap()
+    .unwrap();
+    // PG decomposes 18 months → 1 year + 6 months for EXTRACT.
+    assert!((year_part - 1.0).abs() < f64::EPSILON, "year: {year_part}");
+    assert!((month_part - 6.0).abs() < f64::EPSILON, "month: {month_part}");
+}
+
+/// Duration → interval: weeks×7 + days collapse into the interval days field.
+/// P1W3D has weeks=1, days=3; expected interval days = 10.
+#[pg_test]
+fn pg_cast_duration_to_interval_weeks_collapse() {
+    let day_part = Spi::get_one::<f64>(
+        "SELECT EXTRACT(DAY FROM 'P1W3D'::temporal.duration::interval)::float8",
+    )
+    .unwrap()
+    .unwrap();
+    assert!((day_part - 10.0).abs() < f64::EPSILON, "day: {day_part}");
+}
+
+/// Time-only interval → duration → interval: EXTRACT(EPOCH) is preserved.
+#[pg_test]
+fn pg_cast_interval_roundtrip_time_only() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT EXTRACT(EPOCH FROM '2 hours 30 minutes 45 seconds'::interval)
+          = EXTRACT(EPOCH FROM
+              '2 hours 30 minutes 45 seconds'::interval::temporal.duration::interval)",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// A mixed-sign interval (months positive, days negative) is rejected because
+/// the resulting Duration would violate the Temporal sign-uniformity rule.
+#[pg_test]
+#[should_panic(expected = "mixed-sign")]
+fn pg_cast_interval_mixed_sign_rejected() {
+    // INTERVAL '1 month' - INTERVAL '2 days' produces a mixed-sign interval
+    // (months=1, days=-2) which is valid in PG but invalid as a Temporal Duration.
+    Spi::run(
+        "SELECT (INTERVAL '1 month' - INTERVAL '2 days')::temporal.duration",
+    )
+    .unwrap();
+}
+
+/// Negative time-only duration → interval → duration: EXTRACT(EPOCH) is preserved.
+#[pg_test]
+fn pg_cast_negative_duration_to_interval_roundtrip() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT EXTRACT(EPOCH FROM '-PT2H30M'::temporal.duration::interval)
+          = EXTRACT(EPOCH FROM
+              '-PT2H30M'::temporal.duration::interval::temporal.duration::interval)",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// Casting a duration with months outside PostgreSQL interval's `i32` range
+/// must raise an out-of-range error.
+///
+/// P200000000Y collapses to 2_400_000_000 months, which exceeds i32::MAX.
+#[pg_test]
+#[should_panic]
+fn pg_cast_duration_to_interval_overflow_months_rejected() {
+    Spi::run("SELECT 'P200000000Y'::temporal.duration::interval").unwrap();
+}

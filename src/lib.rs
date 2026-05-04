@@ -35,6 +35,7 @@ pub mod pg_test {
 mod tests {
     use pgrx::prelude::*;
 
+    include!("gucs_tests.rs");
     include!("types/zoned_datetime/tests.rs");
     include!("types/instant/tests.rs");
     include!("types/plain_date/tests.rs");

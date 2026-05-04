@@ -362,3 +362,48 @@ pub fn instant_until(inst: Instant, other: Instant) -> Duration {
         .unwrap_or_else(|e| error!("instant_until failed: {e}"));
     Duration::from_temporal(&d)
 }
+
+// ---------------------------------------------------------------------------
+// Explicit casts: timestamptz ↔ Instant
+// ---------------------------------------------------------------------------
+
+/// Offset of the PostgreSQL epoch (2000-01-01T00:00:00Z) from the Unix epoch
+/// (1970-01-01T00:00:00Z) expressed in nanoseconds.
+const PG_EPOCH_UNIX_NS: i128 = 946_684_800_000_000_000;
+
+/// Cast a `timestamptz` to an `Instant`.
+///
+/// PostgreSQL `timestamptz` stores microseconds since 2000-01-01T00:00:00Z.
+/// `Instant` stores nanoseconds since 1970-01-01T00:00:00Z (Unix epoch).
+/// Range validation is delegated to `temporal_rs`.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn timestamptz_to_instant(ts: TimestampWithTimeZone) -> Instant {
+    let pg_us = pg_sys::TimestampTz::from(ts);
+    let unix_ns = pg_us as i128 * 1_000 + PG_EPOCH_UNIX_NS;
+    let ti = TemporalInstant::try_new(unix_ns)
+        .unwrap_or_else(|e| error!("timestamptz_to_instant: out of range: {e}"));
+    Instant::from_temporal(&ti)
+}
+
+/// Cast an `Instant` to a `timestamptz`.
+///
+/// Sub-microsecond precision (nanoseconds) is truncated (rounded toward zero)
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn instant_to_timestamptz(inst: Instant) -> TimestampWithTimeZone {
+    let pg_us = ((inst.epoch_ns - PG_EPOCH_UNIX_NS) / 1_000) as pg_sys::TimestampTz;
+    TimestampWithTimeZone::try_from(pg_us)
+        .unwrap_or_else(|_| error!("instant out of range for timestamptz"))
+}
+
+extension_sql!(
+    r"
+    CREATE CAST (timestamptz AS Instant)
+        WITH FUNCTION timestamptz_to_instant(timestamptz);
+    CREATE CAST (Instant AS timestamptz)
+        WITH FUNCTION instant_to_timestamptz(Instant);
+    ",
+    name = "instant_casts",
+    requires = [timestamptz_to_instant, instant_to_timestamptz],
+);

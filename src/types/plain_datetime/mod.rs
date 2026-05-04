@@ -513,3 +513,59 @@ pub fn plain_datetime_until(pdt: PlainDateTime, other: PlainDateTime) -> Duratio
         .unwrap_or_else(|e| error!("plain_datetime_until failed: {e}"));
     Duration::from_temporal(&d)
 }
+
+// ---------------------------------------------------------------------------
+// Explicit casts: timestamp ↔ PlainDateTime
+// ---------------------------------------------------------------------------
+
+/// Cast a `timestamp` (without time zone) to a `PlainDateTime`.
+///
+/// The ISO 8601 calendar is assigned. Sub-microsecond nanoseconds are always
+/// zero since `timestamp` has only microsecond precision. Range and field
+/// validity are delegated to `temporal_rs`.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn timestamp_to_plaindatetime(ts: Timestamp) -> PlainDateTime {
+    // pgrx microseconds() returns the *entire* seconds field × 1_000_000
+    // (e.g. for 10.5 s it returns 10_500_000). Take the remainder to get
+    // only the sub-second part in microseconds.
+    let subsecond_us = ts.microseconds() % 1_000_000;
+    let ms = (subsecond_us / 1_000) as u16;
+    let us = (subsecond_us % 1_000) as u16;
+    let sec = ts.second() as u8; // truncates fractional part
+    let pdt = TemporalPdt::try_new_iso(
+        ts.year(), ts.month(), ts.day(),
+        ts.hour(), ts.minute(), sec,
+        ms, us, 0,
+    )
+    .unwrap_or_else(|e| error!("timestamp_to_plaindatetime: {e}"));
+    PlainDateTime::from_temporal(&pdt)
+}
+
+/// Cast a `PlainDateTime` to a `timestamp` (without time zone).
+///
+/// Sub-microsecond precision (nanoseconds) is truncated, matching Temporal's
+/// own `epochMicroseconds` truncation semantics. The nanosecond remainder is
+/// dropped before the float conversion to prevent PG's `make_timestamp` from
+/// rounding at the ns→µs boundary.
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn plaindatetime_to_timestamp(pdt: PlainDateTime) -> Timestamp {
+    // Truncate sub-µs: subsecond_ns = ms*1_000_000 + µs*1_000 + ns.
+    // Integer division by 1_000 drops the nanoseconds portion exactly.
+    let subsecond_us = pdt.subsecond_ns / 1_000; // in microseconds, 0..999_999
+    let second_with_frac = pdt.second as f64 + subsecond_us as f64 / 1_000_000.0;
+    Timestamp::new(pdt.year, pdt.month, pdt.day, pdt.hour, pdt.minute, second_with_frac)
+        .unwrap_or_else(|e| error!("plaindatetime_to_timestamp: out of range: {e:?}"))
+}
+
+extension_sql!(
+    r"
+    CREATE CAST (timestamp AS PlainDateTime)
+        WITH FUNCTION timestamp_to_plaindatetime(timestamp);
+    CREATE CAST (PlainDateTime AS timestamp)
+        WITH FUNCTION plaindatetime_to_timestamp(PlainDateTime);
+    ",
+    name = "plain_datetime_casts",
+    requires = [timestamp_to_plaindatetime, plaindatetime_to_timestamp],
+);

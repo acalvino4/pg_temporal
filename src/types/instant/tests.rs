@@ -247,3 +247,117 @@ fn instant_since_two_hours() {
     .unwrap();
     assert_eq!(r, "PT7200S");
 }
+
+// -----------------------------------------------------------------------
+// Casts: timestamptz ↔ Instant
+// -----------------------------------------------------------------------
+
+/// Unix epoch timestamptz → Instant must yield epoch_ns = 0.
+#[pg_test]
+fn pg_cast_timestamptz_to_instant_unix_epoch() {
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns('1970-01-01 00:00:00+00'::timestamptz::temporal.instant)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "0");
+}
+
+/// PostgreSQL epoch (2000-01-01) timestamptz → Instant.
+/// 2000-01-01T00:00:00Z is 946 684 800 seconds after Unix epoch.
+#[pg_test]
+fn pg_cast_timestamptz_to_instant_pg_epoch() {
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns('2000-01-01 00:00:00+00'::timestamptz::temporal.instant)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "946684800000000000");
+}
+
+/// Instant → timestamptz round-trip preserves Unix epoch value.
+#[pg_test]
+fn pg_cast_timestamptz_roundtrip_epoch() {
+    let secs = Spi::get_one::<f64>(
+        "SELECT EXTRACT(EPOCH FROM
+            '2025-03-01 00:00:00+00'::timestamptz::temporal.instant::timestamptz)::float8",
+    )
+    .unwrap()
+    .unwrap();
+    // 2025-03-01T00:00:00Z = 1 740 787 200 Unix seconds.
+    assert!((secs - 1_740_787_200.0).abs() < 1.0, "got: {secs}");
+}
+
+/// timestamptz → instant → timestamptz preserves microsecond precision.
+#[pg_test]
+fn pg_cast_timestamptz_microsecond_roundtrip() {
+    // make_instant with epoch_ns exactly 1 µs after PG epoch (no sub-µs remainder).
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns(
+            instant_to_timestamptz(make_instant('946684800000001000'))::temporal.instant
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "946684800000001000");
+}
+
+/// Sub-microsecond nanoseconds are truncated (not rounded) when casting to timestamptz.
+#[pg_test]
+fn pg_cast_instant_nano_truncated_on_timestamptz_cast() {
+    // epoch_ns = PG epoch + 1 ns; the 1 ns is below µs resolution and must be lost.
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns(
+            instant_to_timestamptz(make_instant('946684800000000001'))::temporal.instant
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(ns, "946684800000000000");
+}
+
+/// Pre-Unix-epoch timestamptz (negative PG µs) is handled correctly.
+#[pg_test]
+fn pg_cast_timestamptz_to_instant_pre_unix_epoch() {
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns('1960-01-01 00:00:00+00'::timestamptz::temporal.instant)",
+    )
+    .unwrap()
+    .unwrap();
+    // 1960-01-01T00:00:00Z is before Unix epoch → epoch_ns must be negative.
+    let n: i128 = ns.parse().unwrap();
+    assert!(n < 0, "expected negative epoch_ns for pre-1970 date, got {n}");
+}
+
+/// timestamptz with microseconds → Instant → timestamptz: EXTRACT(EPOCH) matches.
+#[pg_test]
+fn pg_cast_timestamptz_with_microseconds_roundtrip() {
+    let ok = Spi::get_one::<bool>(
+        "SELECT EXTRACT(EPOCH FROM '2025-03-01 12:34:56.789012+00'::timestamptz)
+          = EXTRACT(EPOCH FROM
+              '2025-03-01 12:34:56.789012+00'::timestamptz::temporal.instant::timestamptz)",
+    )
+    .unwrap()
+    .unwrap();
+    assert!(ok);
+}
+
+/// Sub-microsecond truncation for a pre-PG-epoch instant uses truncation
+/// toward zero, matching Temporal's `epochMicroseconds` (JavaScript BigInt
+/// division). 1 ns before the PG epoch has a diff of -1 ns; -1 / 1000 = 0
+/// (truncates toward zero), so the cast lands on the PG epoch itself
+/// (946_684_800_000_000_000 unix-ns), not 1 µs earlier.
+#[pg_test]
+fn pg_cast_instant_to_timestamptz_pre_pg_epoch_sub_micro_truncated() {
+    let ns = Spi::get_one::<String>(
+        "SELECT instant_epoch_ns(
+            instant_to_timestamptz(make_instant('946684799999999999'))::temporal.instant
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        ns, "946684800000000000",
+        "expected truncation toward zero to PG epoch (946684800000000000), got: {ns}"
+    );
+}
