@@ -21,8 +21,8 @@
 
 ### High-impact functional gaps
 
-**No hash operator class.**
-No `PostgresHash` derive or hash support for any type. This means types cannot be used as hash join keys, `GROUP BY` cannot use hash aggregation, `CREATE INDEX ... USING HASH` is impossible, and `IN (...)` lists cannot use hash strategies. Affects all eight temporal types.
+~~**No hash operator class.**~~
+Hash operator classes are now implemented for all seven comparable types (`Instant`, `ZonedDateTime`, `PlainDateTime`, `PlainDate`, `PlainTime`, `PlainYearMonth`, `PlainMonthDay`). `Duration` is excluded — it has no `Eq` by design. `PlainMonthDay` uses a manual `Hash` impl to stay consistent with its custom `PartialEq` (which excludes `iso_year`).
 
 **`alias_policy` GUC is registered but does nothing.**
 The setting is exposed to users but has no effect — timezone aliases are passed through to `temporal_rs` as-is regardless of the value. Misleading and production-dangerous.
@@ -48,7 +48,7 @@ No `META.json`, no pre-built binaries, no release automation. `cargo pgrx packag
 ### Lower priority
 
 **`Duration` has no comparison operators.**
-Probably correct per Temporal semantics (durations aren't meaningfully ordered without a reference point), but it's undocumented and will surprise users who try `ORDER BY` on a duration column.
+Correct per Temporal semantics: `<`, `>` etc. are not defined for durations in the spec (they throw in JS too). Instead, use `duration_compare(a, b)` for time-only or day-only durations, or `duration_compare_zoned(a, b, relative_to)` / `duration_compare_plain(a, b, relative_to)` when either duration contains calendar components (years, months, weeks). These mirror `Temporal.Duration.compare()`. `ORDER BY` on a duration column is not supported.
 
 **`pg18` hardcoded as default Cargo feature.**
 `default = ["pg18"]` means missing `--features` silently targets PG18 — a footgun if PG16/17 support is added later.

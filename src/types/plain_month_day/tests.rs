@@ -229,3 +229,56 @@ fn pmd_null_propagates_day_accessor() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Hash operator class
+// -----------------------------------------------------------------------
+
+#[pg_test]
+fn pmd_hash_equal_values_same_hash() {
+    let a = Spi::get_one::<i32>(
+        "SELECT plainmonthday_hash(make_plainmonthday(7, 4))",
+    )
+    .unwrap()
+    .unwrap();
+    let b = Spi::get_one::<i32>(
+        "SELECT plainmonthday_hash(make_plainmonthday(7, 4))",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(a, b);
+}
+
+/// Two `PlainMonthDay` values with differing `iso_year` but identical month/day/cal_idx
+/// must hash identically, because `iso_year` does not participate in `PartialEq`.
+#[test]
+fn pmd_hash_iso_year_excluded() {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let a = PlainMonthDay { iso_year: 1972, month: 7, day: 4, cal_idx: 0 };
+    let b = PlainMonthDay { iso_year: 2024, month: 7, day: 4, cal_idx: 0 };
+
+    let hash_of = |v: PlainMonthDay| {
+        let mut h = DefaultHasher::new();
+        v.hash(&mut h);
+        h.finish()
+    };
+    assert_eq!(hash_of(a), hash_of(b));
+}
+
+#[pg_test]
+fn pmd_group_by_hash() {
+    let count = Spi::get_one::<i64>(
+        "SELECT count(*) FROM ( \
+            SELECT md FROM (VALUES \
+                (make_plainmonthday(1, 1)), \
+                (make_plainmonthday(1, 1)), \
+                (make_plainmonthday(7, 4)) \
+            ) t(md) GROUP BY md \
+        ) g",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(count, 2);
+}

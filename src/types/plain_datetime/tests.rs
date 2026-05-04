@@ -679,3 +679,38 @@ fn pdt_null_propagates_second_arg() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Hash operator class
+// -----------------------------------------------------------------------
+
+#[pg_test]
+fn pdt_hash_equal_values_same_hash() {
+    let a = Spi::get_one::<i32>(
+        "SELECT plaindatetime_hash('2020-03-01T08:30:00'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    let b = Spi::get_one::<i32>(
+        "SELECT plaindatetime_hash('2020-03-01T08:30:00'::temporal.plaindatetime)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(a, b);
+}
+
+#[pg_test]
+fn pdt_group_by_hash() {
+    let count = Spi::get_one::<i64>(
+        "SELECT count(*) FROM ( \
+            SELECT ts FROM (VALUES \
+                ('2020-01-01T00:00:00'::temporal.plaindatetime), \
+                ('2020-01-01T00:00:00'::temporal.plaindatetime), \
+                ('2021-01-01T00:00:00'::temporal.plaindatetime) \
+            ) t(ts) GROUP BY ts \
+        ) g",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(count, 2);
+}

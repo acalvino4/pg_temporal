@@ -624,3 +624,91 @@ fn dur_null_propagates_unit_arg() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Comparison
+// -----------------------------------------------------------------------
+
+/// Calling `duration_compare` with calendar components and no reference point must error.
+#[pg_test]
+#[should_panic]
+fn dur_compare_calendar_without_relto_errors() {
+    // P1Y has a calendar component — temporal_rs requires a relative_to anchor.
+    let _ = Spi::get_one::<i32>(
+        "SELECT duration_compare('P1Y'::temporal.duration, 'P2Y'::temporal.duration)",
+    );
+}
+
+#[pg_test]
+fn dur_compare_equal_time_only() {
+    let r = Spi::get_one::<i32>(
+        "SELECT duration_compare('PT2H'::temporal.duration, 'PT2H'::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, 0);
+}
+
+#[pg_test]
+fn dur_compare_less() {
+    let r = Spi::get_one::<i32>(
+        "SELECT duration_compare('PT1H'::temporal.duration, 'PT2H'::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, -1);
+}
+
+#[pg_test]
+fn dur_compare_greater() {
+    let r = Spi::get_one::<i32>(
+        "SELECT duration_compare('PT3H'::temporal.duration, 'PT2H'::temporal.duration)",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, 1);
+}
+
+#[pg_test]
+fn dur_compare_zoned_calendar() {
+    // 1 year vs 2 years anchored at 2020-01-01 — 1Y < 2Y unambiguously.
+    let r = Spi::get_one::<i32>(
+        "SELECT duration_compare_zoned(\
+            'P1Y'::temporal.duration, \
+            'P2Y'::temporal.duration, \
+            '2020-01-01T00:00:00[UTC]'::temporal.zoneddatetime\
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, -1);
+}
+
+#[pg_test]
+fn dur_compare_plain_calendar() {
+    // 2 months vs 1 month anchored at 2020-01-01 — 2M > 1M.
+    let r = Spi::get_one::<i32>(
+        "SELECT duration_compare_plain(\
+            'P2M'::temporal.duration, \
+            'P1M'::temporal.duration, \
+            '2020-01-01T00:00:00'::temporal.plaindatetime\
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, 1);
+}
+
+#[pg_test]
+fn dur_compare_plain_equal() {
+    let r = Spi::get_one::<i32>(
+        "SELECT duration_compare_plain(\
+            'P1Y'::temporal.duration, \
+            'P1Y'::temporal.duration, \
+            '2020-06-15T00:00:00'::temporal.plaindatetime\
+        )",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(r, 0);
+}

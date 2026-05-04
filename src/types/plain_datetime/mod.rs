@@ -33,7 +33,7 @@ use crate::types::plain_time::PlainTime;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PostgresType, PostgresEq, PostgresOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainDateTime {

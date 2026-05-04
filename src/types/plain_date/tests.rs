@@ -463,3 +463,34 @@ fn pd_null_propagates_second_arg() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Hash operator class
+// -----------------------------------------------------------------------
+
+#[pg_test]
+fn pd_hash_equal_values_same_hash() {
+    let a = Spi::get_one::<i32>("SELECT plaindate_hash('2020-06-15'::temporal.plaindate)")
+        .unwrap()
+        .unwrap();
+    let b = Spi::get_one::<i32>("SELECT plaindate_hash('2020-06-15'::temporal.plaindate)")
+        .unwrap()
+        .unwrap();
+    assert_eq!(a, b);
+}
+
+#[pg_test]
+fn pd_group_by_hash() {
+    let count = Spi::get_one::<i64>(
+        "SELECT count(*) FROM ( \
+            SELECT d FROM (VALUES \
+                ('2020-01-01'::temporal.plaindate), \
+                ('2020-01-01'::temporal.plaindate), \
+                ('2021-01-01'::temporal.plaindate) \
+            ) t(d) GROUP BY d \
+        ) g",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(count, 2);
+}

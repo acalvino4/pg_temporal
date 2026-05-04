@@ -618,6 +618,79 @@ pub fn duration_subtract_plain(a: Duration, b: Duration, relative_to: PlainDateT
 }
 
 // ---------------------------------------------------------------------------
+// Comparison
+// ---------------------------------------------------------------------------
+
+/// Compare two durations, returning -1, 0, or 1.
+///
+/// Mirrors `Temporal.Duration.compare(one, two)`. Works for time-only
+/// durations and durations whose only calendar component is `days` (treated
+/// as fixed 24-hour days). Durations with years, months, or weeks require a
+/// reference point — use `duration_compare_zoned` or `duration_compare_plain`.
+#[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn duration_compare(a: Duration, b: Duration) -> i32 {
+    let ord = a
+        .to_temporal()
+        .compare_with_provider(&b.to_temporal(), None, &*TZ_PROVIDER)
+        .unwrap_or_else(|e| {
+            error!(
+                "duration_compare: durations with calendar components (years, months, weeks) \
+                 require a reference point; use duration_compare_zoned or duration_compare_plain: {e}"
+            )
+        });
+    match ord {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+/// Compare two durations anchored to a `ZonedDateTime`, returning -1, 0, or 1.
+///
+/// Mirrors `Temporal.Duration.compare(one, two, { relativeTo: zonedDateTime })`.
+/// Use this when either duration contains calendar components (years, months,
+/// weeks, or days) and DST-aware day lengths are relevant.
+#[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn duration_compare_zoned(a: Duration, b: Duration, relative_to: ZonedDateTime) -> i32 {
+    let rel = RelativeTo::from(relative_to.to_temporal());
+    let ord = a
+        .to_temporal()
+        .compare_with_provider(&b.to_temporal(), Some(rel), &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("duration_compare_zoned failed: {e}"));
+    match ord {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+/// Compare two durations anchored to a `PlainDateTime`, returning -1, 0, or 1.
+///
+/// Mirrors `Temporal.Duration.compare(one, two, { relativeTo: plainDateTime })`.
+/// Use this when either duration contains calendar components (years, months,
+/// or weeks) and timezone-aware day lengths are not needed.
+#[allow(clippy::needless_pass_by_value)] // pgrx requires by-value for PostgresType params
+#[must_use]
+#[pg_extern(immutable, parallel_safe, strict)]
+pub fn duration_compare_plain(a: Duration, b: Duration, relative_to: PlainDateTime) -> i32 {
+    let plain_date = relative_to.to_temporal().to_plain_date();
+    let rel = RelativeTo::from(plain_date);
+    let ord = a
+        .to_temporal()
+        .compare_with_provider(&b.to_temporal(), Some(rel), &*TZ_PROVIDER)
+        .unwrap_or_else(|e| error!("duration_compare_plain failed: {e}"));
+    match ord {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => 1,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Explicit casts: interval ↔ Duration
 // ---------------------------------------------------------------------------
 

@@ -31,7 +31,7 @@ use temporal_rs::{
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PostgresType, PostgresEq, PostgresOrd)]
+#[derive(Debug, Clone, Copy, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainMonthDay {
@@ -48,6 +48,18 @@ impl PartialEq for PlainMonthDay {
 }
 
 impl Eq for PlainMonthDay {}
+
+impl std::hash::Hash for PlainMonthDay {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Must hash only the fields that participate in PartialEq (iso_year is excluded).
+        let month = self.month;
+        let day = self.day;
+        let cal_idx = self.cal_idx;
+        month.hash(state);
+        day.hash(state);
+        cal_idx.hash(state);
+    }
+}
 
 impl PartialOrd for PlainMonthDay {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {

@@ -276,3 +276,38 @@ fn pym_null_propagates_second_arg() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Hash operator class
+// -----------------------------------------------------------------------
+
+#[pg_test]
+fn pym_hash_equal_values_same_hash() {
+    let a = Spi::get_one::<i32>(
+        "SELECT plainyearmonth_hash(make_plainyearmonth(2020, 6))",
+    )
+    .unwrap()
+    .unwrap();
+    let b = Spi::get_one::<i32>(
+        "SELECT plainyearmonth_hash(make_plainyearmonth(2020, 6))",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(a, b);
+}
+
+#[pg_test]
+fn pym_group_by_hash() {
+    let count = Spi::get_one::<i64>(
+        "SELECT count(*) FROM ( \
+            SELECT ym FROM (VALUES \
+                (make_plainyearmonth(2020, 1)), \
+                (make_plainyearmonth(2020, 1)), \
+                (make_plainyearmonth(2021, 1)) \
+            ) t(ym) GROUP BY ym \
+        ) g",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(count, 2);
+}

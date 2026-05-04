@@ -390,3 +390,34 @@ fn instant_null_propagates_second_arg() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Hash operator class
+// -----------------------------------------------------------------------
+
+#[pg_test]
+fn instant_hash_equal_values_same_hash() {
+    let a = Spi::get_one::<i32>("SELECT instant_hash('2020-01-01T00:00:00Z'::temporal.instant)")
+        .unwrap()
+        .unwrap();
+    let b = Spi::get_one::<i32>("SELECT instant_hash('2020-01-01T00:00:00Z'::temporal.instant)")
+        .unwrap()
+        .unwrap();
+    assert_eq!(a, b);
+}
+
+#[pg_test]
+fn instant_group_by_hash() {
+    let count = Spi::get_one::<i64>(
+        "SELECT count(*) FROM ( \
+            SELECT ts FROM (VALUES \
+                ('2020-01-01T00:00:00Z'::temporal.instant), \
+                ('2020-01-01T00:00:00Z'::temporal.instant), \
+                ('2021-01-01T00:00:00Z'::temporal.instant) \
+            ) t(ts) GROUP BY ts \
+        ) g",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(count, 2);
+}

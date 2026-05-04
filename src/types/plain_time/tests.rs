@@ -397,3 +397,34 @@ fn pt_null_propagates_second_arg() {
     );
     assert_eq!(r.unwrap(), None);
 }
+
+// -----------------------------------------------------------------------
+// Hash operator class
+// -----------------------------------------------------------------------
+
+#[pg_test]
+fn pt_hash_equal_values_same_hash() {
+    let a = Spi::get_one::<i32>("SELECT plaintime_hash('14:30:00'::temporal.plaintime)")
+        .unwrap()
+        .unwrap();
+    let b = Spi::get_one::<i32>("SELECT plaintime_hash('14:30:00'::temporal.plaintime)")
+        .unwrap()
+        .unwrap();
+    assert_eq!(a, b);
+}
+
+#[pg_test]
+fn pt_group_by_hash() {
+    let count = Spi::get_one::<i64>(
+        "SELECT count(*) FROM ( \
+            SELECT t FROM (VALUES \
+                ('08:00:00'::temporal.plaintime), \
+                ('08:00:00'::temporal.plaintime), \
+                ('09:00:00'::temporal.plaintime) \
+            ) t(t) GROUP BY t \
+        ) g",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(count, 2);
+}
