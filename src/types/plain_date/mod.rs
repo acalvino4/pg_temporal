@@ -6,6 +6,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, PlainDate as TemporalPd,
@@ -373,3 +374,46 @@ pub fn plaindate_to_plaindatetime(
         .unwrap_or_else(|e| error!("plaindate_to_plaindatetime failed: {e}"));
     Some(PlainDateTime::from_temporal(&result))
 }
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize a `PlainDate` to the binary wire format.
+///
+/// Wire format (7 bytes):
+///   bytes 0–3: `year` as big-endian i32
+///   byte 4: `month`, byte 5: `day`, byte 6: `cal_idx`
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plaindate_send(val: PlainDate) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(7);
+    buf.extend_from_slice(&val.year.to_be_bytes());
+    buf.push(val.month);
+    buf.push(val.day);
+    buf.push(val.cal_idx);
+    buf
+}
+
+/// Deserialize a `PlainDate` from the binary wire format.
+///
+/// Expects 7 bytes in the order described for `plaindate_send`.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plaindate_recv(internal: Internal) -> PlainDate {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("plaindate_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let year    = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
+    let month   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let day     = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    PlainDate { year, month, day, cal_idx }
+}
+
+extension_sql!(
+    r"ALTER TYPE PlainDate SET (SEND = plaindate_send, RECEIVE = plaindate_recv);",
+    name = "plaindate_send_recv",
+    requires = [plaindate_send, plaindate_recv],
+);

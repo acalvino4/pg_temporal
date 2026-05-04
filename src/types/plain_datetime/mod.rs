@@ -6,6 +6,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -517,3 +518,56 @@ pub fn plaintime_to_plaindatetime(pt: PlainTime, pd: PlainDate) -> PlainDateTime
         .unwrap_or_else(|e| error!("plaintime_to_plaindatetime failed: {e}"));
     PlainDateTime::from_temporal(&result)
 }
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize a `PlainDateTime` to the binary wire format.
+///
+/// Wire format (14 bytes):
+///   bytes 0–3: `year` as big-endian i32
+///   bytes 4–7: `subsecond_ns` as big-endian u32
+///   byte 8: `month`, byte 9: `day`, byte 10: `hour`,
+///   byte 11: `minute`, byte 12: `second`, byte 13: `cal_idx`
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plaindatetime_send(val: PlainDateTime) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(14);
+    buf.extend_from_slice(&val.year.to_be_bytes());
+    buf.extend_from_slice(&val.subsecond_ns.to_be_bytes());
+    buf.push(val.month);
+    buf.push(val.day);
+    buf.push(val.hour);
+    buf.push(val.minute);
+    buf.push(val.second);
+    buf.push(val.cal_idx);
+    buf
+}
+
+/// Deserialize a `PlainDateTime` from the binary wire format.
+///
+/// Expects 14 bytes in the order described for `plaindatetime_send`.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plaindatetime_recv(internal: Internal) -> PlainDateTime {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("plaindatetime_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
+    let subsecond_ns = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as u32 };
+    let month  = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let day    = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let hour   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    PlainDateTime { year, subsecond_ns, month, day, hour, minute, second, cal_idx }
+}
+
+extension_sql!(
+    r"ALTER TYPE PlainDateTime SET (SEND = plaindatetime_send, RECEIVE = plaindatetime_recv);",
+    name = "plaindatetime_send_recv",
+    requires = [plaindatetime_send, plaindatetime_recv],
+);

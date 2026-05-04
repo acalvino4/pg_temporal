@@ -1,4 +1,5 @@
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::ffi::CStr;
 use temporal_rs::{
     Instant as TemporalInstant,
@@ -296,4 +297,38 @@ extension_sql!(
     ",
     name = "instant_casts",
     requires = [timestamptz_to_instant, instant_to_timestamptz],
+);
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize an `Instant` to the binary wire format.
+///
+/// Wire format (16 bytes): `epoch_ns` as a big-endian i128.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn instant_send(val: Instant) -> Vec<u8> {
+    val.epoch_ns.to_be_bytes().to_vec()
+}
+
+/// Deserialize an `Instant` from the binary wire format.
+///
+/// Expects 16 bytes: `epoch_ns` as a big-endian i128.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn instant_recv(internal: Internal) -> Instant {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("instant_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let mut bytes = [0u8; 16];
+    unsafe { pgrx::pg_sys::pq_copymsgbytes(buf, bytes.as_mut_ptr() as *mut _, 16); }
+    Instant { epoch_ns: i128::from_be_bytes(bytes) }
+}
+
+extension_sql!(
+    r"ALTER TYPE Instant SET (SEND = instant_send, RECEIVE = instant_recv);",
+    name = "instant_send_recv",
+    requires = [instant_send, instant_recv],
 );

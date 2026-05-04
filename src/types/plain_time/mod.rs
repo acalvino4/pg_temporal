@@ -6,6 +6,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -375,4 +376,47 @@ extension_sql!(
     ",
     name = "plaintime_casts",
     requires = [time_to_plaintime, plaintime_to_time],
+);
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize a `PlainTime` to the binary wire format.
+///
+/// Wire format (7 bytes):
+///   bytes 0–3: `subsecond_ns` as big-endian u32
+///   byte 4: `hour`, byte 5: `minute`, byte 6: `second`
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plaintime_send(val: PlainTime) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(7);
+    buf.extend_from_slice(&val.subsecond_ns.to_be_bytes());
+    buf.push(val.hour);
+    buf.push(val.minute);
+    buf.push(val.second);
+    buf
+}
+
+/// Deserialize a `PlainTime` from the binary wire format.
+///
+/// Expects 7 bytes in the order described for `plaintime_send`.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plaintime_recv(internal: Internal) -> PlainTime {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("plaintime_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let subsecond_ns = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as u32 };
+    let hour   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    PlainTime { subsecond_ns, hour, minute, second }
+}
+
+extension_sql!(
+    r"ALTER TYPE PlainTime SET (SEND = plaintime_send, RECEIVE = plaintime_recv);",
+    name = "plaintime_send_recv",
+    requires = [plaintime_send, plaintime_recv],
 );

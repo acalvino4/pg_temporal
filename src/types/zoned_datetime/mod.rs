@@ -6,6 +6,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, TimeZone, ZonedDateTime as TemporalZdt,
@@ -379,3 +380,52 @@ pub fn instant_to_zoneddatetime(
         .unwrap_or_else(|e| error!("instant_to_zoneddatetime failed: {e}"));
     ZonedDateTime::from_temporal(&zdt)
 }
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize a `ZonedDateTime` to the binary wire format.
+///
+/// Wire format (19 bytes):
+///   bytes 0–15: `epoch_ns` as big-endian i128
+///   bytes 16–17: `tz_idx` as big-endian u16
+///   byte 18: `cal_idx`
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn zoneddatetime_send(val: ZonedDateTime) -> Vec<u8> {
+    // Copy packed struct fields to the stack to avoid unaligned references.
+    let epoch_ns = val.epoch_ns;
+    let tz_idx = val.tz_idx;
+    let cal_idx = val.cal_idx;
+    let mut buf = Vec::with_capacity(19);
+    buf.extend_from_slice(&epoch_ns.to_be_bytes());
+    buf.extend_from_slice(&tz_idx.to_be_bytes());
+    buf.push(cal_idx);
+    buf
+}
+
+/// Deserialize a `ZonedDateTime` from the binary wire format.
+///
+/// Expects 19 bytes: `epoch_ns` (16, big-endian i128), `tz_idx` (2, big-endian u16),
+/// `cal_idx` (1).
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn zoneddatetime_recv(internal: Internal) -> ZonedDateTime {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("zoneddatetime_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let mut ns_bytes = [0u8; 16];
+    unsafe { pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16); }
+    let epoch_ns = i128::from_be_bytes(ns_bytes);
+    let tz_idx = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 2) as u16 };
+    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    ZonedDateTime { epoch_ns, tz_idx, cal_idx }
+}
+
+extension_sql!(
+    r"ALTER TYPE ZonedDateTime SET (SEND = zoneddatetime_send, RECEIVE = zoneddatetime_recv);",
+    name = "zoneddatetime_send_recv",
+    requires = [zoneddatetime_send, zoneddatetime_recv],
+);

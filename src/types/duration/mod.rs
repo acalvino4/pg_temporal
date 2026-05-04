@@ -1,4 +1,5 @@
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::ffi::CStr;
 use std::str::FromStr;
 use temporal_rs::{
@@ -687,4 +688,79 @@ extension_sql!(
     ",
     name = "duration_casts",
     requires = [interval_to_duration, duration_to_interval],
+);
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize a `Duration` to the binary wire format.
+///
+/// Wire format (96 bytes, all big-endian):
+///   bytes 0–7: `years` (i64), bytes 8–15: `months` (i64),
+///   bytes 16–23: `weeks` (i64), bytes 24–31: `days` (i64),
+///   bytes 32–39: `hours` (i64), bytes 40–47: `minutes` (i64),
+///   bytes 48–55: `seconds` (i64), bytes 56–63: `milliseconds` (i64),
+///   bytes 64–79: `microseconds` (i128), bytes 80–95: `nanoseconds` (i128)
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn duration_send(val: Duration) -> Vec<u8> {
+    // Copy packed struct fields to the stack to avoid unaligned references.
+    let years        = val.years;
+    let months       = val.months;
+    let weeks        = val.weeks;
+    let days         = val.days;
+    let hours        = val.hours;
+    let minutes      = val.minutes;
+    let seconds      = val.seconds;
+    let milliseconds = val.milliseconds;
+    let microseconds = val.microseconds;
+    let nanoseconds  = val.nanoseconds;
+    let mut buf = Vec::with_capacity(96);
+    buf.extend_from_slice(&years.to_be_bytes());
+    buf.extend_from_slice(&months.to_be_bytes());
+    buf.extend_from_slice(&weeks.to_be_bytes());
+    buf.extend_from_slice(&days.to_be_bytes());
+    buf.extend_from_slice(&hours.to_be_bytes());
+    buf.extend_from_slice(&minutes.to_be_bytes());
+    buf.extend_from_slice(&seconds.to_be_bytes());
+    buf.extend_from_slice(&milliseconds.to_be_bytes());
+    buf.extend_from_slice(&microseconds.to_be_bytes());
+    buf.extend_from_slice(&nanoseconds.to_be_bytes());
+    buf
+}
+
+/// Deserialize a `Duration` from the binary wire format.
+///
+/// Expects 96 bytes in the order described for `duration_send`.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn duration_recv(internal: Internal) -> Duration {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("duration_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let years        = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let months       = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let weeks        = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let days         = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let hours        = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let minutes      = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let seconds      = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let milliseconds = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let mut us_bytes = [0u8; 16];
+    let mut ns_bytes = [0u8; 16];
+    unsafe {
+        pgrx::pg_sys::pq_copymsgbytes(buf, us_bytes.as_mut_ptr() as *mut _, 16);
+        pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16);
+    }
+    let microseconds = i128::from_be_bytes(us_bytes);
+    let nanoseconds  = i128::from_be_bytes(ns_bytes);
+    Duration { years, months, weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds }
+}
+
+extension_sql!(
+    r"ALTER TYPE Duration SET (SEND = duration_send, RECEIVE = duration_recv);",
+    name = "duration_send_recv",
+    requires = [duration_send, duration_recv],
 );

@@ -6,6 +6,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use pgrx::prelude::*;
+use pgrx::Internal;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -278,3 +279,46 @@ impl PlainMonthDay {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Binary send / recv
+// ---------------------------------------------------------------------------
+
+/// Serialize a `PlainMonthDay` to the binary wire format.
+///
+/// Wire format (7 bytes):
+///   bytes 0–3: `iso_year` as big-endian i32
+///   byte 4: `month`, byte 5: `day`, byte 6: `cal_idx`
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plainmonthday_send(val: PlainMonthDay) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(7);
+    buf.extend_from_slice(&val.iso_year.to_be_bytes());
+    buf.push(val.month);
+    buf.push(val.day);
+    buf.push(val.cal_idx);
+    buf
+}
+
+/// Deserialize a `PlainMonthDay` from the binary wire format.
+///
+/// Expects 7 bytes in the order described for `plainmonthday_send`.
+#[must_use]
+#[pg_extern(immutable, strict)]
+pub fn plainmonthday_recv(internal: Internal) -> PlainMonthDay {
+    let buf = internal
+        .unwrap()
+        .unwrap_or_else(|| error!("plainmonthday_recv: null internal"))
+        .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
+    let iso_year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
+    let month    = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let day      = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let cal_idx  = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    PlainMonthDay { iso_year, month, day, cal_idx }
+}
+
+extension_sql!(
+    r"ALTER TYPE PlainMonthDay SET (SEND = plainmonthday_send, RECEIVE = plainmonthday_recv);",
+    name = "plainmonthday_send_recv",
+    requires = [plainmonthday_send, plainmonthday_recv],
+);

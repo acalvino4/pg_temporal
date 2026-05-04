@@ -22,13 +22,10 @@
 ### High-impact functional gaps
 
 **No hash operator class.**
-No `PostgresHash` derive or hash support for any type. This means types cannot be used as hash join keys, `GROUP BY` cannot use hash aggregation, `CREATE INDEX ... USING HASH` is impossible, and `IN (...)` lists cannot use hash strategies. Affects all seven temporal types.
+No `PostgresHash` derive or hash support for any type. This means types cannot be used as hash join keys, `GROUP BY` cannot use hash aggregation, `CREATE INDEX ... USING HASH` is impossible, and `IN (...)` lists cannot use hash strategies. Affects all eight temporal types.
 
 **`alias_policy` GUC is registered but does nothing.**
 The setting is exposed to users but has no effect — timezone aliases are passed through to `temporal_rs` as-is regardless of the value. Misleading and production-dangerous.
-
-**No binary send/recv functions.**
-Only text `in`/`out` are implemented. Without registered `send`/`recv` functions, `COPY ... (FORMAT binary)`, logical replication, and some client protocols fall back to slow text I/O.
 
 
 ### Production / deployment
