@@ -9,29 +9,25 @@ build = "build.rs"
 [lib]
 crate-type = ["cdylib", "lib"]
 
-[[bin]]
-name = "pgrx_embed_pg_temporal"
-path = "./src/bin/pgrx_embed.rs"
-
 [features]
 default = ["pg18"]
 pg18 = ["pgrx/pg18"]
 pg_test = []
 
 [dependencies]
-pgrx = { version = "=0.17.0", default-features = false }
-temporal_rs = { version = "0.2.0", default-features = false, features = [
+pgrx = { version = "0.18.0", default-features = false }
+temporal_rs = { version = "0.2.3", default-features = false, features = [
     "compiled_data",
 ] }
-timezone_provider = "0.2.0"
+timezone_provider = "0.2.3"
 
 [build-dependencies]
-timezone_provider = "0.2.0"
-zerovec = { version = "0.11.0", features = ["derive"] }
-zerotrie = "0.2.0"
+timezone_provider = "0.2.3"
+zerovec = { version = "0.11.6", features = ["derive"] }
+zerotrie = "0.2.4"
 
 [dev-dependencies]
-pgrx-tests = "=0.17.0"
+pgrx-tests = "0.18.0"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
@@ -40,7 +36,7 @@ path = "benchmarking/tz_lookup.rs"
 harness = false
 
 [package.metadata.bin]
-cargo-pgrx = { version = "0.17.0", locked = true }
+cargo-pgrx = { version = "0.18.0", locked = true }
 
 [lints.rust]
 

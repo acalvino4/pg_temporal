@@ -95,19 +95,23 @@ pg_temporal/
 ├── docs/                # design specs, dev log, contributing guide
 │   └── usage/           # user documentation
 ├── src/
-│   ├── bin/
-│   │   └── pgrx_embed.rs        # required by cargo pgrx schema (pgrx ≥ 0.15)
-│   ├── catalog.rs               # extension_sql! — timezone + calendar catalog tables
+│   ├── cal_index.rs             # generated calendar index
 │   ├── gucs.rs                  # GUC declarations and registration
+│   ├── gucs_tests.rs            # GUC-focused tests
 │   ├── lib.rs                   # crate root; module declarations + _PG_init
 │   ├── now.rs                   # temporal_now_* functions (PgClock HostHooks impl)
 │   ├── provider.rs              # process-wide LazyLock<CompiledTzdbProvider>
+│   ├── tz_index.rs              # generated timezone index
+│   ├── tz_canonical_list.txt    # canonical timezone ID list (append-only)
 │   └── types/                   # PostgreSQL type implementations
-│       ├── catalog.rs           # shared SPI catalog helpers
 │       ├── mod.rs
 │       ├── duration/            # mod.rs (impl) + tests.rs
 │       ├── instant/             # mod.rs (impl) + tests.rs
+│       ├── plain_date/          # mod.rs (impl) + tests.rs
 │       ├── plain_datetime/      # mod.rs (impl) + tests.rs
+│       ├── plain_month_day/     # mod.rs (impl) + tests.rs
+│       ├── plain_time/          # mod.rs (impl) + tests.rs
+│       ├── plain_year_month/    # mod.rs (impl) + tests.rs
 │       └── zoned_datetime/      # mod.rs (impl) + tests.rs
 ├── Cargo.toml
 ├── pg_temporal.control  # PostgreSQL extension manifest
@@ -119,8 +123,8 @@ pg_temporal/
 ## Notes
 
 - Temporal_rs is alpha-software. If they are missing anything functionality we need, do not attempt our own implementation, just put it in a limitations document. If there is a bug on their end, similarly document it (but you better be damn sure it's their fault; so far it has proven pretty reliable).
-- If spec ever deviates from Temporal, assume the spec is wrong and Temporal is right.
-- `[lib] crate-type = ["cdylib", "lib"]` — both are required. `cdylib` is the extension `.dylib`; `lib` produces the `.rlib` that `pgrx_embed_pg_temporal` links against for schema generation.
+- If this repo's spec ever deviates from Temporal, assume the spec is wrong and Temporal is right.
+- Keep `[lib] crate-type = ["cdylib", "lib"]` as currently configured in this repo unless you intentionally migrate that linkage strategy.
 - The macOS linker flag `-Wl,-undefined,dynamic_lookup` in `.cargo/config.toml` is required on macOS. PostgreSQL server symbols are only resolved when the extension is `dlopen`'d.
 - `rust-toolchain.toml` pins an exact version. `channel = "stable"` was deliberately avoided — it gives no reproducibility guarantee.
 - The extension schema is `temporal`, not `pg_temporal`. Schema names starting with `pg_` are reserved for PostgreSQL system schemas and cannot be created even by superusers. The extension package is still named `pg_temporal`.

@@ -8,7 +8,7 @@
 | ------------- | --------------- | ------------------------------------------------------------- |
 | Rust          | 1.93.1          | Installed via `brew install rustup && rustup-init -y`         |
 | PostgreSQL    | 18.3 (Homebrew) | `brew install postgresql@18`; running as a background service |
-| cargo-pgrx    | 0.17.0          | Project-local via cargo-run-bin                               |
+| cargo-pgrx    | 0.18.0          | Project-local via cargo-run-bin                               |
 | cargo-run-bin | 1.7.5           | Global; the only globally-installed cargo tool                |
 
 ### Key decisions
@@ -43,12 +43,12 @@ Neon (managed PostgreSQL) supports custom-built extensions on the Scale plan via
 
 ## Phase 2: Catalog tables + ZonedDateTime (complete)
 
+> Historical note: this phase was implemented on pgrx 0.17. In pgrx 0.18, the old `pgrx_embed` binary flow is removed.
+
 ### New files
 
 ```
 src/
-├── bin/
-│   └── pgrx_embed.rs         # required by cargo pgrx schema (pgrx 0.17+)
 ├── catalog.rs                 # extension_sql! — timezone_catalog + calendar_catalog
 ├── gucs.rs                    # GUC registration + helpers
 └── types/
@@ -71,7 +71,7 @@ pgrx's `#[inoutfuncs]` attribute wires up the `InOutFuncs` trait, letting us imp
 On input: parse IXDTF → `temporal_rs::ZonedDateTime` → extract timezone/calendar IDs → upsert into catalogs → store OIDs. On output: look up timezone/calendar by OID → reconstruct `temporal_rs::ZonedDateTime` → format via `to_ixdtf_string`. This is correct because in/out functions always run inside a live transaction where SPI is available.
 
 **`"lib"` crate-type added alongside `"cdylib"`**
-The `pgrx_embed_{name}` binary (needed by `cargo pgrx schema` since pgrx ≥ 0.15) links against the library target. Without `crate-type = ["cdylib", "lib"]` the binary can't resolve `pg_temporal::__pgrx_marker` and schema generation fails; `"lib"` adds a linkable `.rlib` target alongside the extension `.dylib`.
+At the time (pgrx 0.17), this was needed for the `pgrx_embed_{name}` binary used by schema generation. In pgrx 0.18, schema generation moved to a single-pass flow and `pgrx_embed` is gone.
 
 **macOS linker flag for deferred symbol resolution**
 Added to `.cargo/config.toml`:
@@ -106,7 +106,7 @@ After Phase 2 was working, each unusual configuration was removed and tested ind
 
 | Item                              | Needed? | Evidence                                                                                                                                                                           |
 | --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `"lib"` in `crate-type`           | **Yes** | Removing it causes `pgrx_embed_pg_temporal` to fail with `use of unresolved module or unlinked crate pg_temporal` — the binary can't link without the `.rlib`                      |
+| `"lib"` in `crate-type`           | **Yes (at the time)** | This Phase 2 validation was done on pgrx 0.17 with `pgrx_embed`; pgrx 0.18 removed that binary path |
 | macOS `-undefined,dynamic_lookup` | **Yes** | Removing it produces a wall of `Undefined symbols for architecture arm64` linker errors for every PostgreSQL server symbol (`palloc`, `SPI_*`, `DefineCustomStringVariable`, etc.) |
 | `panic = "unwind"` in profiles    | **No**  | Tested and `cargo check` + `cargo pgrx schema` both pass without it; removed                                                                                                       |
 
@@ -150,7 +150,7 @@ Stores all nine ISO 8601 date/time fields plus `calendar_oid` for future multi-c
 The spec draft used `nanoseconds: i64` to collapse sub-second fields. The temporal_rs `Duration` separates `milliseconds: i64`, `microseconds: i128`, and `nanoseconds: i128` as distinct signed fields. The temporal_rs representation is the correct one; the spec draft was a mistake. Only `microseconds` and `nanoseconds` return `String` from SQL accessors (no native `i128` SQL type), matching the `epoch_ns` pattern from `ZonedDateTime`.
 
 **`unsafe_code = "forbid"` removed from `[lints.rust]`**
-The contributing guide states "There is no crate-level `unsafe_code` lint because it would fire on that macro-generated code." The `unsafe_code = "forbid"` entry in Cargo.toml was incorrect — it caused the `pgrx_embed_pg_temporal` binary to fail to compile once test functions were present (pgrx's `#[pg_extern]` and `#[pg_test]` macros generate `unsafe extern "Rust" {}` blocks for FFI registration). Removed. The rule is enforced by convention: no hand-written `unsafe` blocks in application code.
+The contributing guide states "There is no crate-level `unsafe_code` lint because it would fire on that macro-generated code." The `unsafe_code = "forbid"` entry in Cargo.toml was incorrect — it caused macro-expanded FFI glue to fail to compile once test functions were present (pgrx's `#[pg_extern]` and `#[pg_test]` macros generate `unsafe extern "Rust" {}` blocks for registration). Removed. The rule is enforced by convention: no hand-written `unsafe` blocks in application code.
 
 **Consolidated `mod tests` in `src/lib.rs`**
 pgrx's test runner calls test functions as `SELECT "tests"."function_name"()` — the schema must be named `tests`. Having multiple `#[pg_schema] mod tests` blocks (one per type module) causes a symbol collision in the embed binary because pgrx generates a schema registration symbol based on the module name. The fix: all `#[pg_test]` functions live in a single `#[pg_schema] mod tests { ... }` in `src/lib.rs`, which `include!`s each type's `tests.rs` file. Test function names are prefixed (`instant_`, `pdt_`, `dur_`) to avoid global symbol conflicts.
@@ -219,7 +219,7 @@ src/
 Clippy's `wrong_self_convention` lint fires on `to_*` methods that take `&self` when the type is `Copy`. All four storage structs (`ZonedDateTime`, `Instant`, `PlainDateTime`, `Duration`) are `Copy`, so `to_temporal` takes ownership (by value). The call site is `value.to_temporal()` — no change in ergonomics.
 
 **Operators via `extension_sql!`**
-pgrx 0.17 has no `#[pg_operator]` attribute. Operators (`<`, `<=`, `=`, `!=`, `>=`, `>`) are registered with `extension_sql!` blocks that emit `CREATE OPERATOR` SQL directly. Each block `requires = [...]` the underlying comparison functions so pgrx orders them correctly in the generated schema file.
+At the time of this phase (pgrx 0.17), this project registered operators (`<`, `<=`, `=`, `!=`, `>=`, `>`) with `extension_sql!` blocks. Each block `requires = [...]` the underlying comparison functions so pgrx orders them correctly in the generated schema file.
 
 **Identity equality for `ZonedDateTime`**
 The Temporal spec's "ZonedDateTime equality" means instant + timezone + calendar all match. Two values representing the same instant in different zones are NOT equal. The `=` operator compares the `(instant_ns, tz_oid, calendar_oid)` tuple. `zoned_datetime_compare` uses the same tuple for ordering, making the order consistent with equality.
