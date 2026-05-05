@@ -28,3 +28,6 @@ No `.github/workflows/` — no automated build, lint, test, or packaging on push
 
 **No PGXN packaging or release artifacts.**
 No `META.json`, no pre-built binaries, no release automation. `cargo pgrx package` is documented but never run in CI.
+
+**`trusted = true` must be injected at package time.**
+pgrx 0.18.0 rejects `trusted = true` in the source control file when `superuser = false` (treating it as a redundant field). The installed control file from `cargo pgrx install` therefore omits `trusted`, meaning only the database owner or a superuser can run `CREATE EXTENSION pg_temporal` — regular users with `CREATE` privilege on the database cannot. The packaging script (deb/rpm/pgxn) should patch the staged control file from `cargo pgrx package` to add `trusted = true` before bundling.

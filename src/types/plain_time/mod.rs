@@ -179,7 +179,6 @@ impl PgVarlenaInOutFuncs for PlainTime {
 /// SELECT make_plaintime(12, 30, 0);
 /// SELECT make_plaintime(12, 30, 0, 0, 0, 0);
 /// ```
-#[allow(clippy::too_many_arguments)]
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn make_plaintime(

@@ -1,5 +1,5 @@
 use std::sync::LazyLock;
-use timezone_provider::tzif::CompiledTzdbProvider;
+use timezone_provider::tzif::{CompiledTzdbProvider, CompiledTzdbResolver, TzdbResolver};
 
 // ---------------------------------------------------------------------------
 // Global timezone provider
@@ -17,9 +17,5 @@ use timezone_provider::tzif::CompiledTzdbProvider;
 //     spawns threads, so Sync is required.
 // ---------------------------------------------------------------------------
 
-// The CompiledTzdbProvider is constructed from its inner resolver type.
-// Clippy wants `TzdbResolver::default()` but the extra import isn't worth it;
-// the Default::default() call is unambiguous in context.
-#[allow(clippy::default_trait_access)]
 pub(crate) static TZ_PROVIDER: LazyLock<CompiledTzdbProvider> =
-    LazyLock::new(|| CompiledTzdbProvider::new(Default::default()));
+    LazyLock::new(|| CompiledTzdbProvider::new(TzdbResolver::<CompiledTzdbResolver>::default()));

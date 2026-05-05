@@ -46,9 +46,7 @@ impl HostClock for PgClock {
         // SAFETY: GetCurrentTimestamp() is always safe to call inside a PG backend.
         let pg_us: i64 = unsafe { pg_sys::GetCurrentTimestamp() };
         // Saturating add avoids undefined behaviour for extreme timestamps.
-        #[allow(clippy::similar_names)]
-        let unix_us = pg_us.saturating_add(PG_TO_UNIX_OFFSET_US);
-        let epoch_ns = i128::from(unix_us) * 1000_i128;
+        let epoch_ns = i128::from(pg_us.saturating_add(PG_TO_UNIX_OFFSET_US)) * 1000_i128;
         Ok(EpochNanoseconds::from(epoch_ns))
     }
 }

@@ -4,4 +4,3 @@ module_pathname = '$libdir/pg_temporal'
 relocatable = false
 schema = 'temporal'
 superuser = false
-trusted = true
