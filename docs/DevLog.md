@@ -29,8 +29,8 @@ _Note: `rust-toolchain.toml` does not support semver ranges — only exact versi
 **`temporal_rs` with `compiled_data` only, no `sys`**
 `compiled_data` bundles TZDB at compile time (no runtime data files). `sys` reads the host wall clock directly — avoided because inside PostgreSQL, "now" must go through `GetCurrentTimestamp()` to respect transaction time semantics. When `now()`-style functions are implemented, we will implement temporal_rs's `HostHooks` trait backed by pgrx's PG time functions.
 
-**`pg_temporal.control`: `superuser = true`**
-Creating base types (types with C-level in/out functions) requires superuser in PostgreSQL. This is not optional.
+**`pg_temporal.control`: `superuser = false`, `trusted = true`**
+PostgreSQL's `trusted = true` marks an extension safe for non-superusers with `CREATE` privilege to install — PostgreSQL runs the installation script as the bootstrap superuser on their behalf. This is appropriate for pg_temporal because its objects (types, operators, pure functions) provide no privilege-escalation path. The `trusted` mechanism exists precisely to allow this for C-based extensions whose objects are safe.
 
 **Schema: `temporal`**
 Explicit in the control file to prevent misinstallation into the user's `search_path`. Note: names starting with `pg_` are reserved for PostgreSQL system schemas and cannot be used even by superusers — the schema must not use the `pg_` prefix. The extension itself is named `pg_temporal`; the SQL schema it installs into is `temporal`.

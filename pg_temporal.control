@@ -3,4 +3,5 @@ default_version = '0.0.1'
 module_pathname = '$libdir/pg_temporal'
 relocatable = false
 schema = 'temporal'
-superuser = true
+superuser = false
+trusted = true
