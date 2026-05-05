@@ -124,7 +124,7 @@ unsafe impl pgrx::datum::UnboxDatum for PlainTime {
     {
         unsafe {
             <Self as pgrx::datum::FromDatum>::from_datum(
-                std::mem::transmute(datum),
+                datum.sans_lifetime(),
                 false,
             )
             .unwrap()
