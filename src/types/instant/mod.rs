@@ -23,7 +23,7 @@ use crate::types::duration::Duration;
 // deserialising the full datum.
 // ---------------------------------------------------------------------------
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
@@ -170,7 +170,7 @@ pub fn make_instant(epoch_ns: &str) -> Instant {
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_epoch_ns(inst: Instant) -> String {
-    inst.epoch_ns.to_string()
+    { inst.epoch_ns }.to_string()
 }
 
 // ---------------------------------------------------------------------------
