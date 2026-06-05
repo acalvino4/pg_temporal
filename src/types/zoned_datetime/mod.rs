@@ -5,8 +5,8 @@
 // take by value due to this pgrx constraint.
 #![allow(clippy::needless_pass_by_value)]
 
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, TimeZone, ZonedDateTime as TemporalZdt,
@@ -40,7 +40,20 @@ use crate::types::instant::Instant;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    PostgresType,
+    PostgresEq,
+    PostgresOrd,
+    PostgresHash,
+)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct ZonedDateTime {
@@ -75,11 +88,7 @@ impl pgrx::datum::FromDatum for ZonedDateTime {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -109,7 +118,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for ZonedDateTime {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -118,11 +128,7 @@ unsafe impl pgrx::datum::UnboxDatum for ZonedDateTime {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -417,7 +423,9 @@ pub fn zoneddatetime_recv(internal: Internal) -> ZonedDateTime {
         .unwrap_or_else(|| error!("zoneddatetime_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let mut ns_bytes = [0u8; 16];
-    unsafe { pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16); }
+    unsafe {
+        pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16);
+    }
     let epoch_ns = i128::from_be_bytes(ns_bytes);
     let tz_idx = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 2) as u16 };
     let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };

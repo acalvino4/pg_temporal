@@ -49,10 +49,8 @@ fn main() {
     let compiled: Vec<&str> = IANA_NORMALIZER.normalized_identifiers.iter().collect();
 
     // Collect any new IDs not already in the canonical list (then drop the borrow).
-    let new_ids: Vec<String> = compiled.iter()
-        .filter(|id| !known.contains(*id))
-        .map(|id| (*id).to_owned())
-        .collect();
+    let new_ids: Vec<String> =
+        compiled.iter().filter(|id| !known.contains(*id)).map(|id| (*id).to_owned()).collect();
     drop(known);
 
     // Append any new IDs not already in the canonical list.
@@ -69,19 +67,17 @@ fn main() {
     }
 
     // Build the sorted lookup array for binary search on the write path.
-    let mut sorted: Vec<(&str, u16)> = canonical
-        .iter()
-        .enumerate()
-        .map(|(i, id)| (id.as_str(), i as u16))
-        .collect();
+    let mut sorted: Vec<(&str, u16)> =
+        canonical.iter().enumerate().map(|(i, id)| (id.as_str(), i as u16)).collect();
     sorted.sort_unstable_by_key(|(id, _)| *id);
 
     // Write tz_index.rs.
-    let mut tz_index = std::fs::File::create(out_dir.join("tz_index.rs"))
-        .expect("failed to create tz_index.rs");
+    let mut tz_index =
+        std::fs::File::create(out_dir.join("tz_index.rs")).expect("failed to create tz_index.rs");
 
     write!(tz_index, "// @generated — do not edit by hand.\n\n").unwrap();
-    write!(tz_index, "/// Canonical IANA timezone IDs, ordered by first-seen (append-only).\n").unwrap();
+    write!(tz_index, "/// Canonical IANA timezone IDs, ordered by first-seen (append-only).\n")
+        .unwrap();
     write!(tz_index, "/// Element index == stored `tz_idx` value.\n").unwrap();
     write!(tz_index, "pub const TZ_CANONICAL: [&str; {}] = [\n", canonical.len()).unwrap();
     for id in &canonical {
@@ -89,7 +85,8 @@ fn main() {
     }
     write!(tz_index, "];\n\n").unwrap();
 
-    write!(tz_index, "/// Sorted `(name, tz_idx)` pairs for binary search on the write path.\n").unwrap();
+    write!(tz_index, "/// Sorted `(name, tz_idx)` pairs for binary search on the write path.\n")
+        .unwrap();
     write!(tz_index, "const TZ_SORTED: [(&str, u16); {}] = [\n", sorted.len()).unwrap();
     for (id, idx) in &sorted {
         write!(tz_index, "    ({id:?}, {idx}),\n").unwrap();
@@ -98,28 +95,16 @@ fn main() {
 
     tz_index.write_all(b"/// Return the stored index for an IANA timezone identifier.\n").unwrap();
     tz_index.write_all(b"/// Binary search: O(log n).  Called on INSERT/UPDATE.\n").unwrap();
-    tz_index
-        .write_all(b"pub fn index_of(id: &str) -> Option<u16> {\n")
-        .unwrap();
-    tz_index
-        .write_all(b"    TZ_SORTED.binary_search_by_key(&id, |&(name, _)| name)\n")
-        .unwrap();
-    tz_index
-        .write_all(b"        .ok()\n")
-        .unwrap();
-    tz_index
-        .write_all(b"        .map(|pos| TZ_SORTED[pos].1)\n")
-        .unwrap();
+    tz_index.write_all(b"pub fn index_of(id: &str) -> Option<u16> {\n").unwrap();
+    tz_index.write_all(b"    TZ_SORTED.binary_search_by_key(&id, |&(name, _)| name)\n").unwrap();
+    tz_index.write_all(b"        .ok()\n").unwrap();
+    tz_index.write_all(b"        .map(|pos| TZ_SORTED[pos].1)\n").unwrap();
     tz_index.write_all(b"}\n\n").unwrap();
 
     tz_index.write_all(b"/// Return the IANA identifier for a stored index.\n").unwrap();
     tz_index.write_all(b"/// Direct array access: O(1).  Called on SELECT.\n").unwrap();
-    tz_index
-        .write_all(b"pub fn name_of(idx: u16) -> Option<&'static str> {\n")
-        .unwrap();
-    tz_index
-        .write_all(b"    TZ_CANONICAL.get(usize::from(idx)).copied()\n")
-        .unwrap();
+    tz_index.write_all(b"pub fn name_of(idx: u16) -> Option<&'static str> {\n").unwrap();
+    tz_index.write_all(b"    TZ_CANONICAL.get(usize::from(idx)).copied()\n").unwrap();
     tz_index.write_all(b"}\n").unwrap();
 
     // -----------------------------------------------------------------------
@@ -132,56 +117,45 @@ fn main() {
     // The stored cal_idx is the position in this array (append-only).
 
     let cal_canonical: &[&str] = &[
-        "buddhist",        // 0
-        "chinese",         // 1
-        "coptic",          // 2
-        "dangi",           // 3
-        "ethioaa",         // 4
-        "ethiopic",        // 5
-        "gregory",         // 6
-        "hebrew",          // 7
-        "indian",          // 8
-        "islamic-civil",   // 9
-        "islamic-tbla",    // 10
+        "buddhist",         // 0
+        "chinese",          // 1
+        "coptic",           // 2
+        "dangi",            // 3
+        "ethioaa",          // 4
+        "ethiopic",         // 5
+        "gregory",          // 6
+        "hebrew",           // 7
+        "indian",           // 8
+        "islamic-civil",    // 9
+        "islamic-tbla",     // 10
         "islamic-umalqura", // 11
-        "iso8601",         // 12  (most common)
-        "japanese",        // 13
-        "julian",          // 14  (JapaneseExtended via temporal_rs)
-        "persian",         // 15
-        "roc",             // 16
+        "iso8601",          // 12  (most common)
+        "japanese",         // 13
+        "julian",           // 14  (JapaneseExtended via temporal_rs)
+        "persian",          // 15
+        "roc",              // 16
     ];
 
-    let mut cal_sorted: Vec<(&str, u8)> = cal_canonical
-        .iter()
-        .enumerate()
-        .map(|(i, &id)| (id, i as u8))
-        .collect();
+    let mut cal_sorted: Vec<(&str, u8)> =
+        cal_canonical.iter().enumerate().map(|(i, &id)| (id, i as u8)).collect();
     cal_sorted.sort_unstable_by_key(|(id, _)| *id);
 
-    let mut cal_index = std::fs::File::create(out_dir.join("cal_index.rs"))
-        .expect("failed to create cal_index.rs");
+    let mut cal_index =
+        std::fs::File::create(out_dir.join("cal_index.rs")).expect("failed to create cal_index.rs");
 
     write!(cal_index, "// @generated — do not edit by hand.\n\n").unwrap();
-    write!(cal_index, "/// Canonical calendar identifiers, ordered by first-seen (append-only).\n").unwrap();
+    write!(cal_index, "/// Canonical calendar identifiers, ordered by first-seen (append-only).\n")
+        .unwrap();
     write!(cal_index, "/// Element index == stored `cal_idx` value.\n").unwrap();
-    write!(
-        cal_index,
-        "pub const CAL_CANONICAL: [&str; {}] = [\n",
-        cal_canonical.len()
-    )
-    .unwrap();
+    write!(cal_index, "pub const CAL_CANONICAL: [&str; {}] = [\n", cal_canonical.len()).unwrap();
     for id in cal_canonical {
         write!(cal_index, "    {id:?},\n").unwrap();
     }
     write!(cal_index, "];\n\n").unwrap();
 
-    write!(cal_index, "/// Sorted `(name, cal_idx)` pairs for binary search on the write path.\n").unwrap();
-    write!(
-        cal_index,
-        "const CAL_SORTED: [(&str, u8); {}] = [\n",
-        cal_sorted.len()
-    )
-    .unwrap();
+    write!(cal_index, "/// Sorted `(name, cal_idx)` pairs for binary search on the write path.\n")
+        .unwrap();
+    write!(cal_index, "const CAL_SORTED: [(&str, u8); {}] = [\n", cal_sorted.len()).unwrap();
     for (id, idx) in &cal_sorted {
         write!(cal_index, "    ({id:?}, {idx}),\n").unwrap();
     }
@@ -189,27 +163,15 @@ fn main() {
 
     cal_index.write_all(b"/// Return the stored index for a calendar identifier.\n").unwrap();
     cal_index.write_all(b"/// Binary search: O(log n).  Called on INSERT/UPDATE.\n").unwrap();
-    cal_index
-        .write_all(b"pub fn index_of(id: &str) -> Option<u8> {\n")
-        .unwrap();
-    cal_index
-        .write_all(b"    CAL_SORTED.binary_search_by_key(&id, |&(name, _)| name)\n")
-        .unwrap();
-    cal_index
-        .write_all(b"        .ok()\n")
-        .unwrap();
-    cal_index
-        .write_all(b"        .map(|pos| CAL_SORTED[pos].1)\n")
-        .unwrap();
+    cal_index.write_all(b"pub fn index_of(id: &str) -> Option<u8> {\n").unwrap();
+    cal_index.write_all(b"    CAL_SORTED.binary_search_by_key(&id, |&(name, _)| name)\n").unwrap();
+    cal_index.write_all(b"        .ok()\n").unwrap();
+    cal_index.write_all(b"        .map(|pos| CAL_SORTED[pos].1)\n").unwrap();
     cal_index.write_all(b"}\n\n").unwrap();
 
     cal_index.write_all(b"/// Return the calendar identifier for a stored index.\n").unwrap();
     cal_index.write_all(b"/// Direct array access: O(1).  Called on SELECT.\n").unwrap();
-    cal_index
-        .write_all(b"pub fn name_of(idx: u8) -> Option<&'static str> {\n")
-        .unwrap();
-    cal_index
-        .write_all(b"    CAL_CANONICAL.get(usize::from(idx)).copied()\n")
-        .unwrap();
+    cal_index.write_all(b"pub fn name_of(idx: u8) -> Option<&'static str> {\n").unwrap();
+    cal_index.write_all(b"    CAL_CANONICAL.get(usize::from(idx)).copied()\n").unwrap();
     cal_index.write_all(b"}\n").unwrap();
 }

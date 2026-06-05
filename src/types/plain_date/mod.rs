@@ -5,8 +5,8 @@
 // take by value due to this pgrx constraint.
 #![allow(clippy::needless_pass_by_value)]
 
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, PlainDate as TemporalPd,
@@ -32,7 +32,20 @@ use crate::types::plain_time::PlainTime;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    PostgresType,
+    PostgresEq,
+    PostgresOrd,
+    PostgresHash,
+)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainDate {
@@ -68,11 +81,7 @@ impl pgrx::datum::FromDatum for PlainDate {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -102,7 +111,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for PlainDate {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -111,11 +121,7 @@ unsafe impl pgrx::datum::UnboxDatum for PlainDate {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -132,8 +138,7 @@ impl PgVarlenaInOutFuncs for PlainDate {
     ///   `2025-03-01[u-ca=iso8601]`
     ///   `2025-03-01[u-ca=persian]`
     fn input(input: &CStr) -> PgVarlena<Self> {
-        let s =
-            input.to_str().unwrap_or_else(|_| error!("plain_date input is not valid UTF-8"));
+        let s = input.to_str().unwrap_or_else(|_| error!("plain_date input is not valid UTF-8"));
 
         let pd = TemporalPd::from_utf8(s.as_bytes())
             .unwrap_or_else(|e| error!("invalid plain_date \"{s}\": {e}"));
@@ -175,10 +180,9 @@ pub fn make_plaindate(
     day: i32,
     cal: default!(&str, "'iso8601'"),
 ) -> PlainDate {
-    let month = u8::try_from(month)
-        .unwrap_or_else(|_| error!("make_plaindate: invalid month {month}"));
-    let day =
-        u8::try_from(day).unwrap_or_else(|_| error!("make_plaindate: invalid day {day}"));
+    let month =
+        u8::try_from(month).unwrap_or_else(|_| error!("make_plaindate: invalid month {month}"));
+    let day = u8::try_from(day).unwrap_or_else(|_| error!("make_plaindate: invalid day {day}"));
     let calendar = Calendar::try_from_utf8(cal.as_bytes())
         .unwrap_or_else(|e| error!("make_plaindate: invalid calendar \"{cal}\": {e}"));
     let cal_id = calendar.identifier();
@@ -250,12 +254,7 @@ impl PlainDate {
         let cal_id = pd.calendar().identifier();
         let cal_idx = crate::cal_index::index_of(cal_id)
             .unwrap_or_else(|| error!("unsupported calendar: {cal_id}"));
-        Self {
-            year: pdt.iso_year(),
-            month: pdt.iso_month(),
-            day: pdt.iso_day(),
-            cal_idx,
-        }
+        Self { year: pdt.iso_year(), month: pdt.iso_month(), day: pdt.iso_day(), cal_idx }
     }
 }
 
@@ -405,9 +404,9 @@ pub fn plaindate_recv(internal: Internal) -> PlainDate {
         .unwrap()
         .unwrap_or_else(|| error!("plaindate_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
-    let year    = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
-    let month   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let day     = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
+    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let day = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     PlainDate { year, month, day, cal_idx }
 }

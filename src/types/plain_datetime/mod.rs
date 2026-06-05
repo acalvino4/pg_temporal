@@ -5,8 +5,8 @@
 // take by value due to this pgrx constraint.
 #![allow(clippy::needless_pass_by_value)]
 
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -33,7 +33,9 @@ use crate::types::plain_time::PlainTime;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash,
+)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainDateTime {
@@ -56,7 +58,15 @@ impl PartialOrd for PlainDateTime {
 impl Ord for PlainDateTime {
     fn cmp(&self, other: &Self) -> Ordering {
         (self.year, self.month, self.day, self.hour, self.minute, self.second, self.subsecond_ns)
-            .cmp(&(other.year, other.month, other.day, other.hour, other.minute, other.second, other.subsecond_ns))
+            .cmp(&(
+                other.year,
+                other.month,
+                other.day,
+                other.hour,
+                other.minute,
+                other.second,
+                other.subsecond_ns,
+            ))
             .then_with(|| self.cal_idx.cmp(&other.cal_idx))
     }
 }
@@ -87,11 +97,7 @@ impl pgrx::datum::FromDatum for PlainDateTime {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -121,7 +127,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for PlainDateTime {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -130,11 +137,7 @@ unsafe impl pgrx::datum::UnboxDatum for PlainDateTime {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -203,10 +206,9 @@ pub fn make_plaindatetime(
     nanosecond: default!(i32, 0),
     cal: default!(&str, "'iso8601'"),
 ) -> PlainDateTime {
-    let month = u8::try_from(month)
-        .unwrap_or_else(|_| error!("make_plaindatetime: invalid month {month}"));
-    let day =
-        u8::try_from(day).unwrap_or_else(|_| error!("make_plaindatetime: invalid day {day}"));
+    let month =
+        u8::try_from(month).unwrap_or_else(|_| error!("make_plaindatetime: invalid month {month}"));
+    let day = u8::try_from(day).unwrap_or_else(|_| error!("make_plaindatetime: invalid day {day}"));
     let hour =
         u8::try_from(hour).unwrap_or_else(|_| error!("make_plaindatetime: invalid hour {hour}"));
     let minute = u8::try_from(minute)
@@ -220,26 +222,26 @@ pub fn make_plaindatetime(
     let nanosecond = u16::try_from(nanosecond)
         .unwrap_or_else(|_| error!("make_plaindatetime: invalid nanosecond {nanosecond}"));
     // Validate that the combination of field values is a legal ISO 8601 date/time.
-    TemporalPdt::try_new_iso(year, month, day, hour, minute, second, millisecond, microsecond, nanosecond)
-        .unwrap_or_else(|e| error!("make_plaindatetime: {e}"));
-    let calendar = Calendar::try_from_utf8(cal.as_bytes())
-        .unwrap_or_else(|e| error!("make_plaindatetime: invalid calendar \"{cal}\": {e}"));
-    let cal_id = calendar.identifier();
-    let cal_idx = crate::cal_index::index_of(cal_id)
-        .unwrap_or_else(|| error!("make_plaindatetime: unsupported calendar \"{cal_id}\""));
-    let subsecond_ns = (millisecond as u32) * 1_000_000
-        + (microsecond as u32) * 1_000
-        + nanosecond as u32;
-    PlainDateTime {
+    TemporalPdt::try_new_iso(
         year,
-        subsecond_ns,
         month,
         day,
         hour,
         minute,
         second,
-        cal_idx,
-    }
+        millisecond,
+        microsecond,
+        nanosecond,
+    )
+    .unwrap_or_else(|e| error!("make_plaindatetime: {e}"));
+    let calendar = Calendar::try_from_utf8(cal.as_bytes())
+        .unwrap_or_else(|e| error!("make_plaindatetime: invalid calendar \"{cal}\": {e}"));
+    let cal_id = calendar.identifier();
+    let cal_idx = crate::cal_index::index_of(cal_id)
+        .unwrap_or_else(|| error!("make_plaindatetime: unsupported calendar \"{cal_id}\""));
+    let subsecond_ns =
+        (millisecond as u32) * 1_000_000 + (microsecond as u32) * 1_000 + nanosecond as u32;
+    PlainDateTime { year, subsecond_ns, month, day, hour, minute, second, cal_idx }
 }
 
 // ---------------------------------------------------------------------------
@@ -340,9 +342,15 @@ impl PlainDateTime {
         // Fields are always stored as ISO 8601. Use try_new_iso then with_calendar
         // so the calendar is attached without reinterpreting the stored fields.
         TemporalPdt::try_new_iso(
-            self.year, self.month, self.day,
-            self.hour, self.minute, self.second,
-            ms, us, ns,
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second,
+            ms,
+            us,
+            ns,
         )
         .unwrap_or_else(|e| error!("failed to reconstruct plain_datetime: {e}"))
         .with_calendar(cal)
@@ -444,9 +452,15 @@ pub fn timestamp_to_plaindatetime(ts: Timestamp) -> PlainDateTime {
     let us = (subsecond_us % 1_000) as u16;
     let sec = ts.second() as u8; // truncates fractional part
     let pdt = TemporalPdt::try_new_iso(
-        ts.year(), ts.month(), ts.day(),
-        ts.hour(), ts.minute(), sec,
-        ms, us, 0,
+        ts.year(),
+        ts.month(),
+        ts.day(),
+        ts.hour(),
+        ts.minute(),
+        sec,
+        ms,
+        us,
+        0,
     )
     .unwrap_or_else(|e| error!("timestamp_to_plaindatetime: {e}"));
     PlainDateTime::from_temporal(&pdt)
@@ -497,7 +511,12 @@ pub fn plaindatetime_to_plaindate(pdt: PlainDateTime) -> PlainDate {
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaindatetime_to_plaintime(pdt: PlainDateTime) -> PlainTime {
-    PlainTime { subsecond_ns: pdt.subsecond_ns, hour: pdt.hour, minute: pdt.minute, second: pdt.second }
+    PlainTime {
+        subsecond_ns: pdt.subsecond_ns,
+        hour: pdt.hour,
+        minute: pdt.minute,
+        second: pdt.second,
+    }
 }
 
 /// Combine a `PlainTime` and a `PlainDate` into a `PlainDateTime`.
@@ -557,9 +576,9 @@ pub fn plaindatetime_recv(internal: Internal) -> PlainDateTime {
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
     let subsecond_ns = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as u32 };
-    let month  = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let day    = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let hour   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let day = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let hour = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };

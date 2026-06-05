@@ -5,8 +5,8 @@
 // take by value due to this pgrx constraint.
 #![allow(clippy::needless_pass_by_value)]
 
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -101,11 +101,7 @@ impl pgrx::datum::FromDatum for PlainMonthDay {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -135,7 +131,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for PlainMonthDay {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -144,11 +141,7 @@ unsafe impl pgrx::datum::UnboxDatum for PlainMonthDay {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -202,15 +195,10 @@ impl PgVarlenaInOutFuncs for PlainMonthDay {
 /// ```
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn make_plainmonthday(
-    month: i32,
-    day: i32,
-    cal: default!(&str, "'iso8601'"),
-) -> PlainMonthDay {
-    let month = u8::try_from(month)
-        .unwrap_or_else(|_| error!("make_plainmonthday: invalid month {month}"));
-    let day =
-        u8::try_from(day).unwrap_or_else(|_| error!("make_plainmonthday: invalid day {day}"));
+pub fn make_plainmonthday(month: i32, day: i32, cal: default!(&str, "'iso8601'")) -> PlainMonthDay {
+    let month =
+        u8::try_from(month).unwrap_or_else(|_| error!("make_plainmonthday: invalid month {month}"));
+    let day = u8::try_from(day).unwrap_or_else(|_| error!("make_plainmonthday: invalid day {day}"));
     let calendar = Calendar::try_from_utf8(cal.as_bytes())
         .unwrap_or_else(|e| error!("make_plainmonthday: invalid calendar \"{cal}\": {e}"));
     let cal_id = calendar.identifier();
@@ -248,9 +236,7 @@ pub fn plainmonthday_day(pmd: PlainMonthDay) -> i32 {
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn plainmonthday_calendar(pmd: PlainMonthDay) -> String {
     crate::cal_index::name_of(pmd.cal_idx)
-        .unwrap_or_else(|| {
-            error!("plainmonthday_calendar: unknown calendar index {}", pmd.cal_idx)
-        })
+        .unwrap_or_else(|| error!("plainmonthday_calendar: unknown calendar index {}", pmd.cal_idx))
         .to_string()
 }
 
@@ -283,12 +269,7 @@ impl PlainMonthDay {
         let cal_id = pmd.calendar().identifier();
         let cal_idx = crate::cal_index::index_of(cal_id)
             .unwrap_or_else(|| error!("unsupported calendar: {cal_id}"));
-        Self {
-            iso_year: pmd.iso.year,
-            month: pmd.iso.month,
-            day: pmd.iso.day,
-            cal_idx,
-        }
+        Self { iso_year: pmd.iso.year, month: pmd.iso.month, day: pmd.iso.day, cal_idx }
     }
 }
 
@@ -323,9 +304,9 @@ pub fn plainmonthday_recv(internal: Internal) -> PlainMonthDay {
         .unwrap_or_else(|| error!("plainmonthday_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let iso_year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
-    let month    = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let day      = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let cal_idx  = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let day = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     PlainMonthDay { iso_year, month, day, cal_idx }
 }
 

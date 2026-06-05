@@ -5,8 +5,8 @@
 // take by value due to this pgrx constraint.
 #![allow(clippy::needless_pass_by_value)]
 
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::ffi::CStr;
 use temporal_rs::{
     Calendar, PlainYearMonth as TemporalPym,
@@ -31,7 +31,20 @@ use crate::types::duration::Duration;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    PostgresType,
+    PostgresEq,
+    PostgresOrd,
+    PostgresHash,
+)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainYearMonth {
@@ -66,11 +79,7 @@ impl pgrx::datum::FromDatum for PlainYearMonth {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -100,7 +109,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for PlainYearMonth {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -109,11 +119,7 @@ unsafe impl pgrx::datum::UnboxDatum for PlainYearMonth {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -243,12 +249,9 @@ impl PlainYearMonth {
         let (year_str, month_str) = s.rsplit_once('-').unwrap_or_else(|| {
             error!("plain_year_month from_temporal: unexpected ixdtf format \"{s}\"")
         });
-        let year = year_str
-            .trim_start_matches('+')
-            .parse::<i32>()
-            .unwrap_or_else(|_| {
-                error!("plain_year_month from_temporal: invalid year \"{year_str}\"")
-            });
+        let year = year_str.trim_start_matches('+').parse::<i32>().unwrap_or_else(|_| {
+            error!("plain_year_month from_temporal: invalid year \"{year_str}\"")
+        });
         let month = month_str.parse::<u8>().unwrap_or_else(|_| {
             error!("plain_year_month from_temporal: invalid month \"{month_str}\"")
         });
@@ -341,8 +344,8 @@ pub fn plainyearmonth_recv(internal: Internal) -> PlainYearMonth {
         .unwrap()
         .unwrap_or_else(|| error!("plainyearmonth_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
-    let year    = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
-    let month   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
+    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     PlainYearMonth { year, month, cal_idx }
 }

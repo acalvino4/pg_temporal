@@ -8,16 +8,18 @@ compile_error!("One PostgreSQL major version feature must be enabled: pg16, pg17
     all(feature = "pg16", feature = "pg18"),
     all(feature = "pg17", feature = "pg18"),
 ))]
-compile_error!("PostgreSQL major version features are mutually exclusive; enable exactly one of pg16, pg17, or pg18.");
+compile_error!(
+    "PostgreSQL major version features are mutually exclusive; enable exactly one of pg16, pg17, or pg18."
+);
 
 ::pgrx::pg_module_magic!();
 
-pub mod gucs;
-pub mod tz_index;
 pub mod cal_index;
+pub mod gucs;
 pub mod now;
 pub mod provider;
 pub mod types;
+pub mod tz_index;
 
 /// Called once when the extension shared library is loaded into a backend.
 /// Registers all cluster-wide GUCs before any SQL runs.

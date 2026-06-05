@@ -5,8 +5,8 @@
 // take by value due to this pgrx constraint.
 #![allow(clippy::needless_pass_by_value)]
 
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use temporal_rs::{
@@ -31,7 +31,9 @@ use crate::types::duration::Duration;
 // ---------------------------------------------------------------------------
 
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PostgresType, PostgresEq, PostgresOrd, PostgresHash,
+)]
 #[pgvarlena_inoutfuncs]
 #[bikeshed_postgres_type_manually_impl_from_into_datum]
 pub struct PlainTime {
@@ -49,8 +51,12 @@ impl PartialOrd for PlainTime {
 
 impl Ord for PlainTime {
     fn cmp(&self, other: &Self) -> Ordering {
-        (self.hour, self.minute, self.second, self.subsecond_ns)
-            .cmp(&(other.hour, other.minute, other.second, other.subsecond_ns))
+        (self.hour, self.minute, self.second, self.subsecond_ns).cmp(&(
+            other.hour,
+            other.minute,
+            other.second,
+            other.subsecond_ns,
+        ))
     }
 }
 
@@ -80,11 +86,7 @@ impl pgrx::datum::FromDatum for PlainTime {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -114,7 +116,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for PlainTime {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -123,11 +126,7 @@ unsafe impl pgrx::datum::UnboxDatum for PlainTime {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -144,8 +143,7 @@ impl PgVarlenaInOutFuncs for PlainTime {
     ///   `11:16:10.000000001`
     ///   `T14:30:00`
     fn input(input: &CStr) -> PgVarlena<Self> {
-        let s =
-            input.to_str().unwrap_or_else(|_| error!("plain_time input is not valid UTF-8"));
+        let s = input.to_str().unwrap_or_else(|_| error!("plain_time input is not valid UTF-8"));
 
         let pt = TemporalPt::from_utf8(s.as_bytes())
             .unwrap_or_else(|e| error!("invalid plain_time \"{s}\": {e}"));
@@ -189,12 +187,11 @@ pub fn make_plaintime(
     microsecond: default!(i32, 0),
     nanosecond: default!(i32, 0),
 ) -> PlainTime {
-    let hour =
-        u8::try_from(hour).unwrap_or_else(|_| error!("make_plaintime: invalid hour {hour}"));
-    let minute = u8::try_from(minute)
-        .unwrap_or_else(|_| error!("make_plaintime: invalid minute {minute}"));
-    let second = u8::try_from(second)
-        .unwrap_or_else(|_| error!("make_plaintime: invalid second {second}"));
+    let hour = u8::try_from(hour).unwrap_or_else(|_| error!("make_plaintime: invalid hour {hour}"));
+    let minute =
+        u8::try_from(minute).unwrap_or_else(|_| error!("make_plaintime: invalid minute {minute}"));
+    let second =
+        u8::try_from(second).unwrap_or_else(|_| error!("make_plaintime: invalid second {second}"));
     let millisecond = u16::try_from(millisecond)
         .unwrap_or_else(|_| error!("make_plaintime: invalid millisecond {millisecond}"));
     let microsecond = u16::try_from(microsecond)
@@ -203,9 +200,8 @@ pub fn make_plaintime(
         .unwrap_or_else(|_| error!("make_plaintime: invalid nanosecond {nanosecond}"));
     TemporalPt::try_new(hour, minute, second, millisecond, microsecond, nanosecond)
         .unwrap_or_else(|e| error!("make_plaintime: {e}"));
-    let subsecond_ns = u32::from(millisecond) * 1_000_000
-        + u32::from(microsecond) * 1_000
-        + u32::from(nanosecond);
+    let subsecond_ns =
+        u32::from(millisecond) * 1_000_000 + u32::from(microsecond) * 1_000 + u32::from(nanosecond);
     PlainTime { subsecond_ns, hour, minute, second }
 }
 
@@ -275,12 +271,7 @@ impl PlainTime {
         let subsecond_ns = u32::from(pt.millisecond()) * 1_000_000
             + u32::from(pt.microsecond()) * 1_000
             + u32::from(pt.nanosecond());
-        Self {
-            subsecond_ns,
-            hour: pt.hour(),
-            minute: pt.minute(),
-            second: pt.second(),
-        }
+        Self { subsecond_ns, hour: pt.hour(), minute: pt.minute(), second: pt.second() }
     }
 }
 
@@ -408,7 +399,7 @@ pub fn plaintime_recv(internal: Internal) -> PlainTime {
         .unwrap_or_else(|| error!("plaintime_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let subsecond_ns = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as u32 };
-    let hour   = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let hour = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
     PlainTime { subsecond_ns, hour, minute, second }

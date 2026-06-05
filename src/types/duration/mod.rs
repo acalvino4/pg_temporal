@@ -1,5 +1,5 @@
-use pgrx::prelude::*;
 use pgrx::Internal;
+use pgrx::prelude::*;
 use std::ffi::CStr;
 use std::str::FromStr;
 use temporal_rs::{
@@ -70,11 +70,7 @@ impl pgrx::datum::FromDatum for Duration {
         is_null: bool,
         _typoid: pgrx::pg_sys::Oid,
     ) -> Option<Self> {
-        if is_null {
-            None
-        } else {
-            Some(*unsafe { PgVarlena::<Self>::from_datum(datum) })
-        }
+        if is_null { None } else { Some(*unsafe { PgVarlena::<Self>::from_datum(datum) }) }
     }
 }
 
@@ -104,7 +100,8 @@ where
 }
 
 unsafe impl pgrx::datum::UnboxDatum for Duration {
-    type As<'dat> = Self
+    type As<'dat>
+        = Self
     where
         Self: 'dat;
 
@@ -113,11 +110,7 @@ unsafe impl pgrx::datum::UnboxDatum for Duration {
         Self: 'dat,
     {
         unsafe {
-            <Self as pgrx::datum::FromDatum>::from_datum(
-                datum.sans_lifetime(),
-                false,
-            )
-            .unwrap()
+            <Self as pgrx::datum::FromDatum>::from_datum(datum.sans_lifetime(), false).unwrap()
         }
     }
 }
@@ -714,8 +707,21 @@ pub fn interval_to_duration(iv: Interval) -> Duration {
     let (minutes, rem_us) = (rem_us / 60_000_000, rem_us % 60_000_000);
     let (seconds, rem_us) = (rem_us / 1_000_000, rem_us % 1_000_000);
     // Route through TemporalDuration::new() for sign-uniformity validation.
-    let td = TemporalDuration::new(0, months, 0, days, hours, minutes, seconds, 0, rem_us as i128, 0)
-        .unwrap_or_else(|e| error!("interval_to_duration: mixed-sign interval is not a valid Temporal Duration: {e}"));
+    let td = TemporalDuration::new(
+        0,
+        months,
+        0,
+        days,
+        hours,
+        minutes,
+        seconds,
+        0,
+        rem_us as i128,
+        0,
+    )
+    .unwrap_or_else(|e| {
+        error!("interval_to_duration: mixed-sign interval is not a valid Temporal Duration: {e}")
+    });
     Duration::from_temporal(&td)
 }
 
@@ -728,12 +734,14 @@ pub fn interval_to_duration(iv: Interval) -> Duration {
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn duration_to_interval(d: Duration) -> Interval {
-    let months: i32 = d.years
+    let months: i32 = d
+        .years
         .checked_mul(12)
         .and_then(|y| y.checked_add(d.months))
         .and_then(|m| i32::try_from(m).ok())
         .unwrap_or_else(|| error!("duration_to_interval: months value out of range for interval"));
-    let days: i32 = d.weeks
+    let days: i32 = d
+        .weeks
         .checked_mul(7)
         .and_then(|w| w.checked_add(d.days))
         .and_then(|d| i32::try_from(d).ok())
@@ -779,16 +787,16 @@ extension_sql!(
 #[pg_extern(immutable, strict)]
 pub fn duration_send(val: Duration) -> Vec<u8> {
     // Copy packed struct fields to the stack to avoid unaligned references.
-    let years        = val.years;
-    let months       = val.months;
-    let weeks        = val.weeks;
-    let days         = val.days;
-    let hours        = val.hours;
-    let minutes      = val.minutes;
-    let seconds      = val.seconds;
+    let years = val.years;
+    let months = val.months;
+    let weeks = val.weeks;
+    let days = val.days;
+    let hours = val.hours;
+    let minutes = val.minutes;
+    let seconds = val.seconds;
     let milliseconds = val.milliseconds;
     let microseconds = val.microseconds;
-    let nanoseconds  = val.nanoseconds;
+    let nanoseconds = val.nanoseconds;
     let mut buf = Vec::with_capacity(96);
     buf.extend_from_slice(&years.to_be_bytes());
     buf.extend_from_slice(&months.to_be_bytes());
@@ -813,13 +821,13 @@ pub fn duration_recv(internal: Internal) -> Duration {
         .unwrap()
         .unwrap_or_else(|| error!("duration_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
-    let years        = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
-    let months       = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
-    let weeks        = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
-    let days         = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
-    let hours        = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
-    let minutes      = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
-    let seconds      = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let years = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let months = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let weeks = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let days = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let hours = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let minutes = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
+    let seconds = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
     let milliseconds = unsafe { pgrx::pg_sys::pq_getmsgint64(buf) };
     let mut us_bytes = [0u8; 16];
     let mut ns_bytes = [0u8; 16];
@@ -828,8 +836,19 @@ pub fn duration_recv(internal: Internal) -> Duration {
         pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16);
     }
     let microseconds = i128::from_be_bytes(us_bytes);
-    let nanoseconds  = i128::from_be_bytes(ns_bytes);
-    Duration { years, months, weeks, days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds }
+    let nanoseconds = i128::from_be_bytes(ns_bytes);
+    Duration {
+        years,
+        months,
+        weeks,
+        days,
+        hours,
+        minutes,
+        seconds,
+        milliseconds,
+        microseconds,
+        nanoseconds,
+    }
 }
 
 extension_sql!(

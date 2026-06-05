@@ -77,8 +77,13 @@ fn current_zdt(tz: &str, fn_name: &str) -> TemporalZdt {
         .unwrap_or_else(|e| error!("{fn_name}: clock error: {e}"));
     let time_zone = TimeZone::try_from_str_with_provider(tz, &*TZ_PROVIDER)
         .unwrap_or_else(|e| error!("{fn_name}: invalid timezone \"{tz}\": {e}"));
-    TemporalZdt::try_new_with_provider(epoch_ns.as_i128(), time_zone, Calendar::default(), &*TZ_PROVIDER)
-        .unwrap_or_else(|e| error!("{fn_name}: {e}"))
+    TemporalZdt::try_new_with_provider(
+        epoch_ns.as_i128(),
+        time_zone,
+        Calendar::default(),
+        &*TZ_PROVIDER,
+    )
+    .unwrap_or_else(|e| error!("{fn_name}: {e}"))
 }
 
 /// Returns the current `Instant` at transaction start time.
@@ -114,7 +119,9 @@ pub fn temporal_now_zoneddatetime(tz: &str) -> ZonedDateTime {
 #[must_use]
 #[pg_extern(stable, parallel_safe, strict)]
 pub fn temporal_now_plaindatetime(tz: &str) -> PlainDateTime {
-    PlainDateTime::from_temporal(&current_zdt(tz, "temporal_now_plaindatetime").to_plain_date_time())
+    PlainDateTime::from_temporal(
+        &current_zdt(tz, "temporal_now_plaindatetime").to_plain_date_time(),
+    )
 }
 
 /// Returns the current `PlainDate` at transaction start time as observed
