@@ -70,19 +70,30 @@ jobs:
           key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-reg-${{ runner.os }}-
 
-      - name: Cache cargo-pgrx binary
-        id: cache-pgrx
+      - name: Cache project binaries
+        id: cache-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-pgrx
-          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+          path: .bin
+          key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Install cargo-pgrx
-        if: steps.cache-pgrx.outputs.cache-hit != 'true'
-        run: cargo install cargo-pgrx --version 0.18.0 --locked
+      - name: Cache cargo-run-bin
+        id: cache-run-bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-run-bin
+          key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-run-bin
+        if: steps.cache-run-bin.outputs.cache-hit != 'true'
+        run: cargo install cargo-run-bin --version 1.7.5 --locked
+
+      - name: Install project binaries
+        if: steps.cache-bin.outputs.cache-hit != 'true'
+        run: cargo bin --install
 
       - name: Initialize pgrx
-        run: ~/.cargo/bin/cargo-pgrx init --pg${{ env.PG_VER }} /usr/lib/postgresql/${{ env.PG_VER }}/bin/pg_config
+        run: cargo pgrx init --pg${{ env.PG_VER }} /usr/lib/postgresql/${{ env.PG_VER }}/bin/pg_config
 
       - name: Clippy
         run: cargo clippy --no-default-features --features pg${{ env.PG_VER }} -- -Dwarnings
@@ -138,22 +149,33 @@ jobs:
           key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-reg-${{ runner.os }}-
 
-      - name: Cache cargo-pgrx binary
-        id: cache-pgrx
+      - name: Cache project binaries
+        id: cache-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-pgrx
-          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+          path: .bin
+          key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Install cargo-pgrx
-        if: steps.cache-pgrx.outputs.cache-hit != 'true'
-        run: cargo install cargo-pgrx --version 0.18.0 --locked
+      - name: Cache cargo-run-bin
+        id: cache-run-bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-run-bin
+          key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-run-bin
+        if: steps.cache-run-bin.outputs.cache-hit != 'true'
+        run: cargo install cargo-run-bin --version 1.7.5 --locked
+
+      - name: Install project binaries
+        if: steps.cache-bin.outputs.cache-hit != 'true'
+        run: cargo bin --install
 
       - name: Initialize pgrx
-        run: ~/.cargo/bin/cargo-pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+        run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
       - name: Test
-        run: ~/.cargo/bin/cargo-pgrx test pg${{ matrix.pg }} --no-default-features
+        run: cargo pgrx test pg${{ matrix.pg }} --no-default-features
 
   # ── Tests: macOS ────────────────────────────────────────────────────────────
   test-macos:
@@ -191,26 +213,37 @@ jobs:
           key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-reg-${{ runner.os }}-
 
-      - name: Cache cargo-pgrx binary
-        id: cache-pgrx
+      - name: Cache project binaries
+        id: cache-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-pgrx
-          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+          path: .bin
+          key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Install cargo-pgrx
-        if: steps.cache-pgrx.outputs.cache-hit != 'true'
-        run: cargo install cargo-pgrx --version 0.18.0 --locked
+      - name: Cache cargo-run-bin
+        id: cache-run-bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-run-bin
+          key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-run-bin
+        if: steps.cache-run-bin.outputs.cache-hit != 'true'
+        run: cargo install cargo-run-bin --version 1.7.5 --locked
+
+      - name: Install project binaries
+        if: steps.cache-bin.outputs.cache-hit != 'true'
+        run: cargo bin --install
 
       - name: Initialize pgrx
         run: |
           PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
-          ~/.cargo/bin/cargo-pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
+          cargo pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
 
       - name: Test
         run: |
           PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
-          ~/.cargo/bin/cargo-pgrx test pg${{ matrix.pg }} --no-default-features
+          cargo pgrx test pg${{ matrix.pg }} --no-default-features
 
   # ── Tests: Windows ──────────────────────────────────────────────────────────
   # Note: pg17 only; PostgreSQL is compiled from source via --download, so this
@@ -234,17 +267,29 @@ jobs:
           key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-reg-${{ runner.os }}-
 
-      - name: Cache cargo-pgrx binary
-        id: cache-pgrx
+      - name: Cache project binaries
+        id: cache-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-pgrx.exe
-          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+          path: .bin
+          key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Install cargo-pgrx
-        if: steps.cache-pgrx.outputs.cache-hit != 'true'
+      - name: Cache cargo-run-bin
+        id: cache-run-bin
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-run-bin
+          key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-run-bin
+        if: steps.cache-run-bin.outputs.cache-hit != 'true'
         shell: bash
-        run: cargo install cargo-pgrx --version 0.18.0 --locked
+        run: cargo install cargo-run-bin --version 1.7.5 --locked
+
+      - name: Install project binaries
+        if: steps.cache-bin.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo bin --install
 
       # Cache the compiled PostgreSQL sources to avoid recompiling every run.
       - name: Cache pgrx PostgreSQL download
@@ -255,8 +300,8 @@ jobs:
 
       - name: Initialize pgrx (download & compile PostgreSQL 17)
         shell: bash
-        run: ~/.cargo/bin/cargo-pgrx init --pg17=download
+        run: cargo pgrx init --pg17=download
 
       - name: Test
         shell: bash
-        run: ~/.cargo/bin/cargo-pgrx test pg17 --no-default-features
+        run: cargo pgrx test pg17 --no-default-features
