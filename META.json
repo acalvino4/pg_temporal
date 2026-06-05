@@ -1,0 +1,47 @@
+{
+   "name": "pg_temporal",
+   "abstract": "Temporal-compliant date/time types for PostgreSQL",
+   "description": "Implements the TC39 Temporal specification types (Instant, ZonedDateTime, PlainDateTime, PlainDate, PlainTime, PlainYearMonth, PlainMonthDay, Duration) as native PostgreSQL types with full timezone and multi-calendar support. Built with pgrx.",
+   "version": "0.0.1",
+   "maintainer": [
+      "Augustine Calvino <acalvino4@users.noreply.github.com>"
+   ],
+   "license": "mit",
+   "provides": {
+      "pg_temporal": {
+         "abstract": "Temporal-compliant date/time types for PostgreSQL",
+         "file": "Cargo.toml",
+         "version": "0.0.1"
+      }
+   },
+   "resources": {
+      "homepage": "https://github.com/acalvino4/pg_temporal",
+      "bugtracker": {
+         "web": "https://github.com/acalvino4/pg_temporal/issues"
+      },
+      "repository": {
+         "url": "https://github.com/acalvino4/pg_temporal.git",
+         "web": "https://github.com/acalvino4/pg_temporal",
+         "type": "git"
+      }
+   },
+   "tags": [
+      "temporal",
+      "datetime",
+      "date",
+      "time",
+      "timezone",
+      "duration",
+      "calendar",
+      "tc39",
+      "ecmascript",
+      "instant",
+      "rust",
+      "pgrx"
+   ],
+   "generated_by": "Augustine Calvino",
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "https://pgxn.org/meta/spec.txt"
+   }
+}

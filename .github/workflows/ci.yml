@@ -1,0 +1,262 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# Deny all token permissions by default; individual jobs grant only what they need.
+permissions: {}
+
+jobs:
+  # ── Format ──────────────────────────────────────────────────────────────────
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all -- --check
+
+  # ── Clippy ──────────────────────────────────────────────────────────────────
+  # Run against one PG version; linting doesn't need to be exhaustive per version.
+  clippy:
+    name: clippy
+    needs: fmt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PG_VER: "17"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang libclang-dev llvm-dev \
+            pkg-config libssl-dev libz-dev
+
+      - name: Add PGDG apt repository
+        run: |
+          sudo apt-get install -y wget gnupg
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list'
+          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update -qq
+
+      - name: Install PostgreSQL ${{ env.PG_VER }}
+        run: sudo apt-get install -y postgresql-${{ env.PG_VER }} postgresql-server-dev-${{ env.PG_VER }}
+
+      - name: Fix PostgreSQL permissions for pgrx
+        run: |
+          sudo chmod a+rwx \
+            "$(pg_config --pkglibdir)" \
+            "$(pg_config --sharedir)/extension" \
+            /var/run/postgresql/
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-reg-${{ runner.os }}-
+
+      - name: Cache cargo-pgrx binary
+        id: cache-pgrx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-pgrx
+          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-pgrx
+        if: steps.cache-pgrx.outputs.cache-hit != 'true'
+        run: cargo install cargo-pgrx --version 0.18.0 --locked
+
+      - name: Initialize pgrx
+        run: cargo pgrx init --pg${{ env.PG_VER }} /usr/lib/postgresql/${{ env.PG_VER }}/bin/pg_config
+
+      - name: Clippy
+        run: cargo clippy --no-default-features --features pg${{ env.PG_VER }} -- -Dwarnings
+
+  # ── Tests: Linux ────────────────────────────────────────────────────────────
+  test-linux:
+    name: "test linux (pg${{ matrix.pg }})"
+    needs: fmt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [16, 17, 18]
+    env:
+      PG_VER: ${{ matrix.pg }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang libclang-dev llvm-dev \
+            pkg-config libssl-dev libz-dev
+
+      - name: Add PGDG apt repository
+        run: |
+          sudo apt-get install -y wget gnupg
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list'
+          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update -qq
+
+      - name: Install PostgreSQL ${{ matrix.pg }}
+        run: sudo apt-get install -y postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }}
+
+      - name: Fix PostgreSQL permissions for pgrx
+        run: |
+          sudo chmod a+rwx \
+            "/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config" \
+            "$(pg_config --pkglibdir)" \
+            "$(pg_config --sharedir)/extension" \
+            /var/run/postgresql/ || true
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-reg-${{ runner.os }}-
+
+      - name: Cache cargo-pgrx binary
+        id: cache-pgrx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-pgrx
+          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-pgrx
+        if: steps.cache-pgrx.outputs.cache-hit != 'true'
+        run: cargo install cargo-pgrx --version 0.18.0 --locked
+
+      - name: Initialize pgrx
+        run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+
+      - name: Test
+        run: cargo pgrx test pg${{ matrix.pg }} --no-default-features
+
+  # ── Tests: macOS ────────────────────────────────────────────────────────────
+  test-macos:
+    name: "test macos (pg${{ matrix.pg }})"
+    needs: fmt
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [16, 17, 18]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL ${{ matrix.pg }} via Homebrew
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
+            brew install postgresql@${{ matrix.pg }}
+          echo "$(brew --prefix postgresql@${{ matrix.pg }})/bin" >> "$GITHUB_PATH"
+
+      - name: Fix PostgreSQL permissions for pgrx
+        run: |
+          PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
+          sudo chmod a+rwx \
+            "$($PG_CONFIG --pkglibdir)" \
+            "$($PG_CONFIG --sharedir)/extension"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-reg-${{ runner.os }}-
+
+      - name: Cache cargo-pgrx binary
+        id: cache-pgrx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-pgrx
+          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-pgrx
+        if: steps.cache-pgrx.outputs.cache-hit != 'true'
+        run: cargo install cargo-pgrx --version 0.18.0 --locked
+
+      - name: Initialize pgrx
+        run: |
+          PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
+          cargo pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
+
+      - name: Test
+        run: |
+          PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
+          cargo pgrx test pg${{ matrix.pg }} --no-default-features
+
+  # ── Tests: Windows ──────────────────────────────────────────────────────────
+  # Note: pg17 only; PostgreSQL is compiled from source via --download, so this
+  # job takes ~45 minutes on a cold cache.
+  test-windows:
+    name: "test windows (pg17)"
+    needs: fmt
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-reg-${{ runner.os }}-
+
+      - name: Cache cargo-pgrx binary
+        id: cache-pgrx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-pgrx.exe
+          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-pgrx
+        if: steps.cache-pgrx.outputs.cache-hit != 'true'
+        shell: bash
+        run: cargo install cargo-pgrx --version 0.18.0 --locked
+
+      # Cache the compiled PostgreSQL sources to avoid recompiling every run.
+      - name: Cache pgrx PostgreSQL download
+        uses: actions/cache@v4
+        with:
+          path: ~/.pgrx
+          key: pgrx-pg17-${{ runner.os }}-${{ runner.arch }}-0.18.0
+
+      - name: Initialize pgrx (download & compile PostgreSQL 17)
+        shell: bash
+        run: cargo pgrx init --pg17=download
+
+      - name: Test
+        shell: bash
+        run: cargo pgrx test pg17 --no-default-features

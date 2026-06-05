@@ -23,11 +23,8 @@
 **No version migration path.**
 No `pg_temporal--0.0.1--0.0.2.sql` upgrade scripts. Any schema change requires a full drop/reinstall.
 
-**No CI pipeline.**
-No `.github/workflows/` — no automated build, lint, test, or packaging on push/PR.
+**No CI pipeline.** ✅ resolved — `.github/workflows/ci.yml` runs fmt, clippy, and tests across pg16/17/18 on Linux, macOS, and Windows on every push and PR.
 
-**No PGXN packaging or release artifacts.**
-No `META.json`, no pre-built binaries, no release automation. `cargo pgrx package` is documented but never run in CI.
+**No PGXN packaging or release artifacts.** ✅ resolved — `META.json` added for PGXN; `.github/workflows/release.yml` builds pre-compiled `.tar.gz` archives (Linux amd64, macOS arm64+amd64) for each pg version on every tagged release and uploads them to a GitHub Release. The source zip for PGXN is built and uploaded automatically; an optional step publishes to PGXN directly via the `PGXN_USERNAME` / `PGXN_PASSWORD` repository secrets.
 
-**`trusted = true` must be injected at package time.**
-pgrx 0.18.0 rejects `trusted = true` in the source control file when `superuser = false` (treating it as a redundant field). The installed control file from `cargo pgrx install` therefore omits `trusted`, meaning only the database owner or a superuser can run `CREATE EXTENSION pg_temporal` — regular users with `CREATE` privilege on the database cannot. The packaging script (deb/rpm/pgxn) should patch the staged control file from `cargo pgrx package` to add `trusted = true` before bundling.
+**`trusted = true` must be injected at package time.** ✅ resolved — the release workflow patches `trusted = true` into the staged control file produced by `cargo pgrx package` before creating each binary archive.

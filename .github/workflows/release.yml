@@ -1,0 +1,259 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Deny all token permissions by default; individual jobs grant only what they need.
+permissions: {}
+
+jobs:
+  # ── Build binary packages ────────────────────────────────────────────────────
+  # Produces one .tar.gz per (platform × PG version).
+  # The archive is flat: .so/.dylib + .control (with trusted=true) + .sql + install.sh
+  build:
+    name: "build ${{ matrix.os-name }}-${{ matrix.arch }} pg${{ matrix.pg }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            os-name: linux
+            arch: amd64
+            pg: 16
+          - os: ubuntu-latest
+            os-name: linux
+            arch: amd64
+            pg: 17
+          - os: ubuntu-latest
+            os-name: linux
+            arch: amd64
+            pg: 18
+          # macOS arm64 (M-series)
+          - os: macos-14
+            os-name: macos
+            arch: arm64
+            pg: 16
+          - os: macos-14
+            os-name: macos
+            arch: arm64
+            pg: 17
+          - os: macos-14
+            os-name: macos
+            arch: arm64
+            pg: 18
+          # macOS x86_64 (Intel)
+          - os: macos-13
+            os-name: macos
+            arch: amd64
+            pg: 16
+          - os: macos-13
+            os-name: macos
+            arch: amd64
+            pg: 17
+          - os: macos-13
+            os-name: macos
+            arch: amd64
+            pg: 18
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Install PostgreSQL ──────────────────────────────────────────────────
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang libclang-dev llvm-dev \
+            pkg-config libssl-dev libz-dev wget gnupg
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            > /etc/apt/sources.list.d/pgdg.list'
+          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }}
+
+      - name: Install PostgreSQL (macOS via Homebrew)
+        if: runner.os == 'macOS'
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
+            brew install postgresql@${{ matrix.pg }}
+          echo "$(brew --prefix postgresql@${{ matrix.pg }})/bin" >> "$GITHUB_PATH"
+
+      # ── pg_config path ─────────────────────────────────────────────────────
+      - name: Resolve pg_config path (Linux)
+        if: runner.os == 'Linux'
+        run: echo "PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config" >> "$GITHUB_ENV"
+
+      - name: Resolve pg_config path (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          echo "PG_CONFIG=$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config" >> "$GITHUB_ENV"
+
+      - name: Fix PostgreSQL permissions for pgrx
+        if: runner.os == 'Linux'
+        run: |
+          sudo chmod a+rwx \
+            "$("$PG_CONFIG" --pkglibdir)" \
+            "$("$PG_CONFIG" --sharedir)/extension" \
+            /var/run/postgresql/ || true
+
+      # ── cargo-pgrx ─────────────────────────────────────────────────────────
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-reg-${{ runner.os }}-
+
+      - name: Cache cargo-pgrx binary
+        id: cache-pgrx
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-pgrx
+          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install cargo-pgrx
+        if: steps.cache-pgrx.outputs.cache-hit != 'true'
+        run: cargo install cargo-pgrx --version 0.18.0 --locked
+
+      - name: Initialize pgrx
+        run: cargo pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
+
+      # ── Build extension package ─────────────────────────────────────────────
+      - name: Build (cargo pgrx package)
+        run: cargo pgrx package --pg-config "$PG_CONFIG"
+
+      # ── Assemble flat archive ───────────────────────────────────────────────
+      - name: Assemble release archive
+        shell: bash
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${GH_REF_NAME#v}"
+          PG_VER="${{ matrix.pg }}"
+          OS="${{ matrix.os-name }}"
+          ARCH="${{ matrix.arch }}"
+
+          STAGING="target/release/pg_temporal-pg${PG_VER}"
+          DIRNAME="pg_temporal-${VERSION}-pg${PG_VER}-${OS}-${ARCH}"
+
+          # ── Patch trusted = true into the control file ──────────────────────
+          CONTROL=$(find "$STAGING" -name "pg_temporal.control" | head -1)
+          if ! grep -q "^trusted" "$CONTROL"; then
+            echo "trusted = true" >> "$CONTROL"
+          fi
+
+          # ── Gather files into flat directory ────────────────────────────────
+          mkdir -p "dist/$DIRNAME"
+          find "$STAGING" \( -name "pg_temporal.so" -o -name "pg_temporal.dylib" \) \
+            -exec cp {} "dist/$DIRNAME/" \;
+          find "$STAGING" -name "pg_temporal.control" -exec cp {} "dist/$DIRNAME/" \;
+          find "$STAGING" -name "pg_temporal--*.sql" -exec cp {} "dist/$DIRNAME/" \;
+          cp README.md "dist/$DIRNAME/"
+
+          # ── Generate install.sh ──────────────────────────────────────────────
+          cat > "dist/$DIRNAME/install.sh" << 'EOF'
+          #!/usr/bin/env bash
+          # Installs pg_temporal into the PostgreSQL found by pg_config.
+          # Set PG_CONFIG to target a specific PostgreSQL installation.
+          set -euo pipefail
+          PG_CONFIG="${PG_CONFIG:-$(command -v pg_config 2>/dev/null || true)}"
+          if [[ -z "$PG_CONFIG" ]]; then
+            echo "Error: pg_config not found. Install PostgreSQL or set PG_CONFIG." >&2
+            exit 1
+          fi
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          LIB_DIR="$("$PG_CONFIG" --pkglibdir)"
+          EXT_DIR="$("$PG_CONFIG" --sharedir)/extension"
+          echo "Installing to:"
+          echo "  Library:    $LIB_DIR"
+          echo "  Extension:  $EXT_DIR"
+          for lib in "$DIR"/pg_temporal.so "$DIR"/pg_temporal.dylib; do
+            [[ -f "$lib" ]] && cp "$lib" "$LIB_DIR/"
+          done
+          cp "$DIR"/pg_temporal.control "$DIR"/pg_temporal--*.sql "$EXT_DIR/"
+          echo "Done. Run: CREATE EXTENSION pg_temporal;"
+          EOF
+          chmod +x "dist/$DIRNAME/install.sh"
+
+          # ── Create tarball ────────────────────────────────────────────────────
+          tar -czf "${DIRNAME}.tar.gz" -C dist "$DIRNAME"
+          echo "ARTIFACT=${DIRNAME}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ env.ARTIFACT }}
+          if-no-files-found: error
+
+  # ── Create GitHub Release ───────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch full history so git archive includes all tracked files
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Create PGXN source zip
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${GH_REF_NAME#v}"
+          git archive \
+            --format=zip \
+            --prefix="pg_temporal-${VERSION}/" \
+            -o "artifacts/pg_temporal-${VERSION}.zip" \
+            HEAD
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          TAG="$GH_REF_NAME"
+          VERSION="${TAG#v}"
+
+          mapfile -t FILES < <(find artifacts/ -type f | sort)
+          gh release create "$TAG" \
+            --title "pg_temporal $TAG" \
+            --generate-notes \
+            "${FILES[@]}"
+
+      # ── Optional: publish to PGXN ───────────────────────────────────────────
+      # Requires PGXN_USERNAME and PGXN_PASSWORD repository secrets.
+      # See https://manager.pgxn.org/account/register to create an account.
+      - name: Publish to PGXN
+        if: ${{ secrets.PGXN_USERNAME != '' }}
+        env:
+          PGXN_USERNAME: ${{ secrets.PGXN_USERNAME }}
+          PGXN_PASSWORD: ${{ secrets.PGXN_PASSWORD }}
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${GH_REF_NAME#v}"
+          ZIP="artifacts/pg_temporal-${VERSION}.zip"
+          curl --fail-with-body -X POST \
+            -u "$PGXN_USERNAME:$PGXN_PASSWORD" \
+            -F "archive=@$ZIP" \
+            https://manager.pgxn.org/api/v1/dist
