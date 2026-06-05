@@ -82,7 +82,7 @@ jobs:
         run: cargo install cargo-pgrx --version 0.18.0 --locked
 
       - name: Initialize pgrx
-        run: cargo-pgrx init --pg${{ env.PG_VER }} /usr/lib/postgresql/${{ env.PG_VER }}/bin/pg_config
+        run: ~/.cargo/bin/cargo-pgrx init --pg${{ env.PG_VER }} /usr/lib/postgresql/${{ env.PG_VER }}/bin/pg_config
 
       - name: Clippy
         run: cargo clippy --no-default-features --features pg${{ env.PG_VER }} -- -Dwarnings
@@ -150,10 +150,10 @@ jobs:
         run: cargo install cargo-pgrx --version 0.18.0 --locked
 
       - name: Initialize pgrx
-        run: cargo-pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+        run: ~/.cargo/bin/cargo-pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
 
       - name: Test
-        run: cargo-pgrx test pg${{ matrix.pg }} --no-default-features
+        run: ~/.cargo/bin/cargo-pgrx test pg${{ matrix.pg }} --no-default-features
 
   # ── Tests: macOS ────────────────────────────────────────────────────────────
   test-macos:
@@ -205,12 +205,12 @@ jobs:
       - name: Initialize pgrx
         run: |
           PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
-          cargo-pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
+          ~/.cargo/bin/cargo-pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
 
       - name: Test
         run: |
           PG_CONFIG="$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config"
-          cargo-pgrx test pg${{ matrix.pg }} --no-default-features
+          ~/.cargo/bin/cargo-pgrx test pg${{ matrix.pg }} --no-default-features
 
   # ── Tests: Windows ──────────────────────────────────────────────────────────
   # Note: pg17 only; PostgreSQL is compiled from source via --download, so this
@@ -255,8 +255,8 @@ jobs:
 
       - name: Initialize pgrx (download & compile PostgreSQL 17)
         shell: bash
-        run: cargo-pgrx init --pg17=download
+        run: ~/.cargo/bin/cargo-pgrx init --pg17=download
 
       - name: Test
         shell: bash
-        run: cargo-pgrx test pg17 --no-default-features
+        run: ~/.cargo/bin/cargo-pgrx test pg17 --no-default-features
