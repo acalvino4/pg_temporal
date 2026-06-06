@@ -36,6 +36,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Install clippy
         run: rustup component add clippy
 
@@ -64,15 +67,6 @@ jobs:
             "$(pg_config --sharedir)/extension" \
             /var/run/postgresql/
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-reg-${{ runner.os }}-
-
       - name: Cache project binaries
         id: cache-bin
         uses: actions/cache@v4
@@ -84,7 +78,7 @@ jobs:
         id: cache-run-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-run-bin
+          path: ${{ env.CARGO_HOME }}/bin/cargo-run-bin
           key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install cargo-run-bin
@@ -117,6 +111,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # All three pg-version jobs share one build cache — most compiled code
+      # (temporal_rs, icu, pgrx proc-macros, etc.) is identical across versions.
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-linux
+          cache-on-failure: true
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -qq
@@ -143,15 +145,6 @@ jobs:
             "$(pg_config --sharedir)/extension" \
             /var/run/postgresql/ || true
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-reg-${{ runner.os }}-
-
       - name: Cache project binaries
         id: cache-bin
         uses: actions/cache@v4
@@ -163,7 +156,7 @@ jobs:
         id: cache-run-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-run-bin
+          path: ${{ env.CARGO_HOME }}/bin/cargo-run-bin
           key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install cargo-run-bin
@@ -194,6 +187,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-macos
+          cache-on-failure: true
+
       - name: Install PostgreSQL ${{ matrix.pg }} via Homebrew
         run: |
           HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
@@ -207,15 +206,6 @@ jobs:
             "$($PG_CONFIG --pkglibdir)" \
             "$($PG_CONFIG --sharedir)/extension"
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-reg-${{ runner.os }}-
-
       - name: Cache project binaries
         id: cache-bin
         uses: actions/cache@v4
@@ -227,7 +217,7 @@ jobs:
         id: cache-run-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-run-bin
+          path: ${{ env.CARGO_HOME }}/bin/cargo-run-bin
           key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install cargo-run-bin
@@ -261,14 +251,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-reg-${{ runner.os }}-
+          cache-on-failure: true
 
       - name: Cache project binaries
         id: cache-bin
@@ -281,7 +267,7 @@ jobs:
         id: cache-run-bin
         uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-run-bin
+          path: ${{ env.CARGO_HOME }}/bin/cargo-run-bin.exe
           key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install cargo-run-bin
