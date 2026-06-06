@@ -1,0 +1,42 @@
+name: Set up Linux PostgreSQL
+description: >
+  Install build dependencies, add the PGDG apt repository, install PostgreSQL,
+  and fix directory permissions for pgrx.
+
+inputs:
+  pg-version:
+    description: PostgreSQL major version to install (e.g. 16, 17, 18)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install build dependencies
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          build-essential clang libclang-dev llvm-dev \
+          pkg-config libssl-dev libz-dev
+
+    - name: Add PGDG apt repository
+      shell: bash
+      run: |
+        sudo apt-get install -y wget gnupg
+        sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+          > /etc/apt/sources.list.d/pgdg.list'
+        wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+        sudo apt-get update -qq
+
+    - name: Install PostgreSQL ${{ inputs.pg-version }}
+      shell: bash
+      run: sudo apt-get install -y postgresql-${{ inputs.pg-version }} postgresql-server-dev-${{ inputs.pg-version }}
+
+    - name: Fix PostgreSQL permissions for pgrx
+      shell: bash
+      run: |
+        sudo chmod a+rwx \
+          "/usr/lib/postgresql/${{ inputs.pg-version }}/bin/pg_config" \
+          "$(pg_config --pkglibdir)" \
+          "$(pg_config --sharedir)/extension" \
+          /var/run/postgresql/ || true

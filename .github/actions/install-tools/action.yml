@@ -1,0 +1,31 @@
+name: Install project tools
+description: >
+  Cache and install cargo-run-bin and the project's pinned binaries (.bin/).
+  Handles the .exe extension automatically on Windows.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache project binaries
+      id: cache-bin
+      uses: actions/cache@v4
+      with:
+        path: .bin
+        key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
+
+    - name: Cache cargo-run-bin
+      id: cache-run-bin
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.CARGO_HOME }}/bin/cargo-run-bin${{ runner.os == 'Windows' && '.exe' || '' }}
+        key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install cargo-run-bin
+      if: steps.cache-run-bin.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo install cargo-run-bin --version 1.7.5 --locked
+
+    - name: Install project binaries
+      if: steps.cache-bin.outputs.cache-hit != 'true'
+      shell: bash
+      run: cargo bin --install

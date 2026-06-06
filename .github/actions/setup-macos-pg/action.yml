@@ -1,0 +1,28 @@
+name: Set up macOS PostgreSQL
+description: >
+  Install PostgreSQL via Homebrew, add its bin to PATH, set the PG_CONFIG
+  environment variable for subsequent steps, and fix permissions for pgrx.
+
+inputs:
+  pg-version:
+    description: PostgreSQL major version to install (e.g. 16, 17, 18)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install PostgreSQL ${{ inputs.pg-version }} via Homebrew
+      shell: bash
+      run: |
+        HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
+          brew install postgresql@${{ inputs.pg-version }}
+        PG_BIN="$(brew --prefix postgresql@${{ inputs.pg-version }})/bin"
+        echo "$PG_BIN" >> "$GITHUB_PATH"
+        echo "PG_CONFIG=$PG_BIN/pg_config" >> "$GITHUB_ENV"
+
+    - name: Fix PostgreSQL permissions for pgrx
+      shell: bash
+      run: |
+        sudo chmod a+rwx \
+          "$("$PG_CONFIG" --pkglibdir)" \
+          "$("$PG_CONFIG" --sharedir)/extension"
