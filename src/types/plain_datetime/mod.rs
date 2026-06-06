@@ -161,7 +161,7 @@ impl PgVarlenaInOutFuncs for PlainDateTime {
             .unwrap_or_else(|e| error!("invalid plain_datetime \"{s}\": {e}"));
 
         let mut result = PgVarlena::<Self>::new();
-        *result = PlainDateTime::from_temporal(&pdt);
+        *result = Self::from_temporal(&pdt);
         result
     }
 
@@ -240,7 +240,7 @@ pub fn make_plaindatetime(
     let cal_idx = crate::cal_index::index_of(cal_id)
         .unwrap_or_else(|| error!("make_plaindatetime: unsupported calendar \"{cal_id}\""));
     let subsecond_ns =
-        (millisecond as u32) * 1_000_000 + (microsecond as u32) * 1_000 + nanosecond as u32;
+        u32::from(millisecond) * 1_000_000 + u32::from(microsecond) * 1_000 + u32::from(nanosecond);
     PlainDateTime { year, subsecond_ns, month, day, hour, minute, second, cal_idx }
 }
 
@@ -295,22 +295,22 @@ pub fn plaindatetime_second(pdt: PlainDateTime) -> i32 {
 /// Returns the millisecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaindatetime_millisecond(pdt: PlainDateTime) -> i32 {
-    (pdt.subsecond_ns / 1_000_000) as i32
+pub const fn plaindatetime_millisecond(pdt: PlainDateTime) -> i32 {
+    (pdt.subsecond_ns / 1_000_000).cast_signed()
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaindatetime_microsecond(pdt: PlainDateTime) -> i32 {
-    ((pdt.subsecond_ns % 1_000_000) / 1_000) as i32
+pub const fn plaindatetime_microsecond(pdt: PlainDateTime) -> i32 {
+    ((pdt.subsecond_ns % 1_000_000) / 1_000).cast_signed()
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaindatetime_nanosecond(pdt: PlainDateTime) -> i32 {
-    (pdt.subsecond_ns % 1_000) as i32
+pub const fn plaindatetime_nanosecond(pdt: PlainDateTime) -> i32 {
+    (pdt.subsecond_ns % 1_000).cast_signed()
 }
 
 /// Returns the calendar name stored with this value.
@@ -365,9 +365,9 @@ impl PlainDateTime {
         let cal_id = pdt.calendar().identifier();
         let cal_idx = crate::cal_index::index_of(cal_id)
             .unwrap_or_else(|| error!("unsupported calendar: {cal_id}"));
-        let subsecond_ns = (pdt.millisecond() as u32) * 1_000_000
-            + (pdt.microsecond() as u32) * 1_000
-            + pdt.nanosecond() as u32;
+        let subsecond_ns = u32::from(pdt.millisecond()) * 1_000_000
+            + u32::from(pdt.microsecond()) * 1_000
+            + u32::from(pdt.nanosecond());
         Self {
             year: pdt.iso_year(),
             subsecond_ns,
@@ -450,6 +450,7 @@ pub fn timestamp_to_plaindatetime(ts: Timestamp) -> PlainDateTime {
     let subsecond_us = ts.microseconds() % 1_000_000;
     let ms = (subsecond_us / 1_000) as u16;
     let us = (subsecond_us % 1_000) as u16;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let sec = ts.second() as u8; // truncates fractional part
     let pdt = TemporalPdt::try_new_iso(
         ts.year(),
@@ -478,7 +479,7 @@ pub fn plaindatetime_to_timestamp(pdt: PlainDateTime) -> Timestamp {
     // Truncate sub-µs: subsecond_ns = ms*1_000_000 + µs*1_000 + ns.
     // Integer division by 1_000 drops the nanoseconds portion exactly.
     let subsecond_us = pdt.subsecond_ns / 1_000; // in microseconds, 0..999_999
-    let second_with_frac = pdt.second as f64 + subsecond_us as f64 / 1_000_000.0;
+    let second_with_frac = f64::from(pdt.second) + f64::from(subsecond_us) / 1_000_000.0;
     Timestamp::new(pdt.year, pdt.month, pdt.day, pdt.hour, pdt.minute, second_with_frac)
         .unwrap_or_else(|e| error!("plaindatetime_to_timestamp: out of range: {e:?}"))
 }
@@ -502,7 +503,7 @@ extension_sql!(
 /// the calendar annotation is preserved).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaindatetime_to_plaindate(pdt: PlainDateTime) -> PlainDate {
+pub const fn plaindatetime_to_plaindate(pdt: PlainDateTime) -> PlainDate {
     PlainDate { year: pdt.year, month: pdt.month, day: pdt.day, cal_idx: pdt.cal_idx }
 }
 
@@ -510,7 +511,7 @@ pub fn plaindatetime_to_plaindate(pdt: PlainDateTime) -> PlainDate {
 /// the sub-second nanoseconds are preserved).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaindatetime_to_plaintime(pdt: PlainDateTime) -> PlainTime {
+pub const fn plaindatetime_to_plaintime(pdt: PlainDateTime) -> PlainTime {
     PlainTime {
         subsecond_ns: pdt.subsecond_ns,
         hour: pdt.hour,
@@ -567,6 +568,7 @@ pub fn plaindatetime_send(val: PlainDateTime) -> Vec<u8> {
 /// Deserialize a `PlainDateTime` from the binary wire format.
 ///
 /// Expects 14 bytes in the order described for `plaindatetime_send`.
+#[allow(clippy::missing_panics_doc)]
 #[must_use]
 #[pg_extern(immutable, strict)]
 pub fn plaindatetime_recv(internal: Internal) -> PlainDateTime {
@@ -574,14 +576,26 @@ pub fn plaindatetime_recv(internal: Internal) -> PlainDateTime {
         .unwrap()
         .unwrap_or_else(|| error!("plaindatetime_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
-    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
+    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) }.cast_signed();
     let subsecond_ns = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as u32 };
-    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let day = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let hour = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let day = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let hour = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
     PlainDateTime { year, subsecond_ns, month, day, hour, minute, second, cal_idx }
 }
 

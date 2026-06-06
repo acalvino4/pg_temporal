@@ -264,20 +264,20 @@ pub fn instant_until(inst: Instant, other: Instant) -> Duration {
 // Explicit casts: timestamptz ↔ Instant
 // ---------------------------------------------------------------------------
 
-/// Offset of the PostgreSQL epoch (2000-01-01T00:00:00Z) from the Unix epoch
+/// Offset of the `PostgreSQL` epoch (2000-01-01T00:00:00Z) from the Unix epoch
 /// (1970-01-01T00:00:00Z) expressed in nanoseconds.
 const PG_EPOCH_UNIX_NS: i128 = 946_684_800_000_000_000;
 
 /// Cast a `timestamptz` to an `Instant`.
 ///
-/// PostgreSQL `timestamptz` stores microseconds since 2000-01-01T00:00:00Z.
+/// `PostgreSQL` `timestamptz` stores microseconds since 2000-01-01T00:00:00Z.
 /// `Instant` stores nanoseconds since 1970-01-01T00:00:00Z (Unix epoch).
 /// Range validation is delegated to `temporal_rs`.
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn timestamptz_to_instant(ts: TimestampWithTimeZone) -> Instant {
     let pg_us = pg_sys::TimestampTz::from(ts);
-    let unix_ns = pg_us as i128 * 1_000 + PG_EPOCH_UNIX_NS;
+    let unix_ns = i128::from(pg_us) * 1_000 + PG_EPOCH_UNIX_NS;
     let ti = TemporalInstant::try_new(unix_ns)
         .unwrap_or_else(|e| error!("timestamptz_to_instant: out of range: {e}"));
     Instant::from_temporal(&ti)
@@ -289,7 +289,9 @@ pub fn timestamptz_to_instant(ts: TimestampWithTimeZone) -> Instant {
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn instant_to_timestamptz(inst: Instant) -> TimestampWithTimeZone {
-    let pg_us = ((inst.epoch_ns - PG_EPOCH_UNIX_NS) / 1_000) as pg_sys::TimestampTz;
+    let pg_us_128 = (inst.epoch_ns - PG_EPOCH_UNIX_NS) / 1_000;
+    let pg_us = i64::try_from(pg_us_128)
+        .unwrap_or_else(|_| error!("instant is out of range for PostgreSQL timestamptz"));
     TimestampWithTimeZone::try_from(pg_us)
         .unwrap_or_else(|_| error!("instant out of range for timestamptz"))
 }
@@ -330,7 +332,7 @@ pub fn instant_recv(internal: Internal) -> Instant {
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let mut bytes = [0u8; 16];
     unsafe {
-        pgrx::pg_sys::pq_copymsgbytes(buf, bytes.as_mut_ptr() as *mut _, 16);
+        pgrx::pg_sys::pq_copymsgbytes(buf, bytes.as_mut_ptr().cast(), 16);
     }
     Instant { epoch_ns: i128::from_be_bytes(bytes) }
 }

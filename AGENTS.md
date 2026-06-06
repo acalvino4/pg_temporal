@@ -24,6 +24,7 @@ Key properties: nanosecond precision, IANA timezone semantics, full DST disambig
 | Command | Description |
 |---|---|
 | `cargo check --features pg17` | Build/type-check (works in sandboxed terminals; substitute `pg16`/`pg18` as needed) |
+| `cargo clippy --no-default-features --features pg17 -- -Dwarnings` | Lint with warnings as errors (matches CI; substitute `pg16`/`pg18` as needed) |
 | `cargo fmt` | Format code (uses `rustfmt.toml` settings) |
 | `cargo pgrx test <pg_major> > /tmp/pg_temporal_test_output.txt 2>&1` | Run tests for a single Postgres version (e.g. `pg17`) |
 | `cargo pgrx test <pg_major> <test_name> > /tmp/pg_temporal_test_output.txt 2>&1` | Run a single test |

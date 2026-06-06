@@ -149,7 +149,7 @@ impl PgVarlenaInOutFuncs for PlainTime {
             .unwrap_or_else(|e| error!("invalid plain_time \"{s}\": {e}"));
 
         let mut result = PgVarlena::<Self>::new();
-        *result = PlainTime::from_temporal(&pt);
+        *result = Self::from_temporal(&pt);
         result
     }
 
@@ -234,22 +234,22 @@ pub fn plaintime_second(pt: PlainTime) -> i32 {
 /// Returns the millisecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaintime_millisecond(pt: PlainTime) -> i32 {
-    (pt.subsecond_ns / 1_000_000) as i32
+pub const fn plaintime_millisecond(pt: PlainTime) -> i32 {
+    (pt.subsecond_ns / 1_000_000).cast_signed()
 }
 
 /// Returns the microsecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaintime_microsecond(pt: PlainTime) -> i32 {
-    ((pt.subsecond_ns % 1_000_000) / 1_000) as i32
+pub const fn plaintime_microsecond(pt: PlainTime) -> i32 {
+    ((pt.subsecond_ns % 1_000_000) / 1_000).cast_signed()
 }
 
 /// Returns the nanosecond component (0–999).
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn plaintime_nanosecond(pt: PlainTime) -> i32 {
-    (pt.subsecond_ns % 1_000) as i32
+pub const fn plaintime_nanosecond(pt: PlainTime) -> i32 {
+    (pt.subsecond_ns % 1_000).cast_signed()
 }
 
 // ---------------------------------------------------------------------------
@@ -352,7 +352,7 @@ pub fn time_to_plaintime(t: Time) -> PlainTime {
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn plaintime_to_time(pt: PlainTime) -> Time {
     let subsecond_us = pt.subsecond_ns / 1_000; // 0..999_999
-    let second_with_frac = pt.second as f64 + subsecond_us as f64 / 1_000_000.0;
+    let second_with_frac = f64::from(pt.second) + f64::from(subsecond_us) / 1_000_000.0;
     Time::new(pt.hour, pt.minute, second_with_frac)
         .unwrap_or_else(|e| error!("plaintime_to_time: out of range: {e:?}"))
 }
@@ -391,6 +391,7 @@ pub fn plaintime_send(val: PlainTime) -> Vec<u8> {
 /// Deserialize a `PlainTime` from the binary wire format.
 ///
 /// Expects 7 bytes in the order described for `plaintime_send`.
+#[allow(clippy::missing_panics_doc)]
 #[must_use]
 #[pg_extern(immutable, strict)]
 pub fn plaintime_recv(internal: Internal) -> PlainTime {
@@ -399,9 +400,15 @@ pub fn plaintime_recv(internal: Internal) -> PlainTime {
         .unwrap_or_else(|| error!("plaintime_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let subsecond_ns = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as u32 };
-    let hour = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let hour = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let minute = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
+    let second = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) }
+        .try_into()
+        .expect("pq_getmsgbyte returns 0..=255");
     PlainTime { subsecond_ns, hour, minute, second }
 }
 

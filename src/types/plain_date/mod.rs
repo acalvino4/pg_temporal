@@ -144,7 +144,7 @@ impl PgVarlenaInOutFuncs for PlainDate {
             .unwrap_or_else(|e| error!("invalid plain_date \"{s}\": {e}"));
 
         let mut result = PgVarlena::<Self>::new();
-        *result = PlainDate::from_temporal(&pd);
+        *result = Self::from_temporal(&pd);
         result
     }
 
@@ -366,7 +366,7 @@ pub fn plaindate_to_plaindatetime(
     pt: default!(Option<PlainTime>, "NULL"),
 ) -> Option<PlainDateTime> {
     let pd = pd?;
-    let temporal_time = pt.map(|t| t.to_temporal());
+    let temporal_time = pt.map(super::plain_time::PlainTime::to_temporal);
     let result = pd
         .to_temporal()
         .to_plain_date_time(temporal_time)
@@ -398,16 +398,23 @@ pub fn plaindate_send(val: PlainDate) -> Vec<u8> {
 ///
 /// Expects 7 bytes in the order described for `plaindate_send`.
 #[must_use]
+#[allow(clippy::missing_panics_doc)]
 #[pg_extern(immutable, strict)]
 pub fn plaindate_recv(internal: Internal) -> PlainDate {
     let buf = internal
         .unwrap()
         .unwrap_or_else(|| error!("plaindate_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
-    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
-    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let day = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4).cast_signed() };
+    let month = unsafe {
+        pgrx::pg_sys::pq_getmsgbyte(buf).try_into().expect("pq_getmsgbyte returns 0..=255")
+    };
+    let day = unsafe {
+        pgrx::pg_sys::pq_getmsgbyte(buf).try_into().expect("pq_getmsgbyte returns 0..=255")
+    };
+    let cal_idx = unsafe {
+        pgrx::pg_sys::pq_getmsgbyte(buf).try_into().expect("pq_getmsgbyte returns 0..=255")
+    };
     PlainDate { year, month, day, cal_idx }
 }
 

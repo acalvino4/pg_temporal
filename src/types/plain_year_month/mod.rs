@@ -143,7 +143,7 @@ impl PgVarlenaInOutFuncs for PlainYearMonth {
             .unwrap_or_else(|e| error!("invalid plain_year_month \"{s}\": {e}"));
 
         let mut result = PgVarlena::<Self>::new();
-        *result = PlainYearMonth::from_temporal(&pym);
+        *result = Self::from_temporal(&pym);
         result
     }
 
@@ -338,15 +338,20 @@ pub fn plainyearmonth_send(val: PlainYearMonth) -> Vec<u8> {
 ///
 /// Expects 6 bytes in the order described for `plainyearmonth_send`.
 #[must_use]
+#[allow(clippy::missing_panics_doc)]
 #[pg_extern(immutable, strict)]
 pub fn plainyearmonth_recv(internal: Internal) -> PlainYearMonth {
     let buf = internal
         .unwrap()
         .unwrap_or_else(|| error!("plainyearmonth_recv: null internal"))
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
-    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4) as i32 };
-    let month = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
-    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let year = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 4).cast_signed() };
+    let month = unsafe {
+        pgrx::pg_sys::pq_getmsgbyte(buf).try_into().expect("pq_getmsgbyte returns 0..=255")
+    };
+    let cal_idx = unsafe {
+        pgrx::pg_sys::pq_getmsgbyte(buf).try_into().expect("pq_getmsgbyte returns 0..=255")
+    };
     PlainYearMonth { year, month, cal_idx }
 }
 

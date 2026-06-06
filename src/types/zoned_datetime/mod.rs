@@ -152,7 +152,7 @@ impl PgVarlenaInOutFuncs for ZonedDateTime {
                 .unwrap_or_else(|e| error!("invalid zoned_datetime \"{s}\": {e}"));
 
         let mut result = PgVarlena::<Self>::new();
-        *result = ZonedDateTime::from_temporal(&zdt);
+        *result = Self::from_temporal(&zdt);
         result
     }
 
@@ -357,7 +357,7 @@ pub fn zoneddatetime_until(zdt: ZonedDateTime, other: ZonedDateTime) -> Duration
 /// time (nanoseconds since Unix epoch) is preserved exactly.
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
-pub fn zoneddatetime_to_instant(zdt: ZonedDateTime) -> Instant {
+pub const fn zoneddatetime_to_instant(zdt: ZonedDateTime) -> Instant {
     Instant { epoch_ns: zdt.epoch_ns }
 }
 
@@ -416,6 +416,7 @@ pub fn zoneddatetime_send(val: ZonedDateTime) -> Vec<u8> {
 /// Expects 19 bytes: `epoch_ns` (16, big-endian i128), `tz_idx` (2, big-endian u16),
 /// `cal_idx` (1).
 #[must_use]
+#[allow(clippy::missing_panics_doc)]
 #[pg_extern(immutable, strict)]
 pub fn zoneddatetime_recv(internal: Internal) -> ZonedDateTime {
     let buf = internal
@@ -424,11 +425,15 @@ pub fn zoneddatetime_recv(internal: Internal) -> ZonedDateTime {
         .cast_mut_ptr::<pgrx::pg_sys::StringInfoData>();
     let mut ns_bytes = [0u8; 16];
     unsafe {
-        pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16);
+        pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr().cast(), 16);
     }
     let epoch_ns = i128::from_be_bytes(ns_bytes);
-    let tz_idx = unsafe { pgrx::pg_sys::pq_getmsgint(buf, 2) as u16 };
-    let cal_idx = unsafe { pgrx::pg_sys::pq_getmsgbyte(buf) as u8 };
+    let tz_idx = unsafe {
+        pgrx::pg_sys::pq_getmsgint(buf, 2).try_into().expect("pq_getmsgint(2) returns 0..=65535")
+    };
+    let cal_idx = unsafe {
+        pgrx::pg_sys::pq_getmsgbyte(buf).try_into().expect("pq_getmsgbyte returns 0..=255")
+    };
     ZonedDateTime { epoch_ns, tz_idx, cal_idx }
 }
 

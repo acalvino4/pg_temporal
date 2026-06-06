@@ -133,7 +133,7 @@ impl PgVarlenaInOutFuncs for Duration {
             .unwrap_or_else(|e| error!("invalid duration \"{s}\": {e}"));
 
         let mut result = PgVarlena::<Self>::new();
-        *result = Duration::from_temporal(&d);
+        *result = Self::from_temporal(&d);
         result
     }
 
@@ -268,7 +268,7 @@ impl Duration {
     }
 
     /// Build a `Duration` from a `temporal_rs` duration.
-    pub(crate) fn from_temporal(d: &TemporalDuration) -> Self {
+    pub(crate) const fn from_temporal(d: &TemporalDuration) -> Self {
         Self {
             years: d.years(),
             months: d.months(),
@@ -687,20 +687,20 @@ pub fn duration_compare_plain(a: Duration, b: Duration, relative_to: PlainDateTi
 // Explicit casts: interval ↔ Duration
 // ---------------------------------------------------------------------------
 
-/// Cast a PostgreSQL `interval` to a `Duration`.
+/// Cast a `PostgreSQL` `interval` to a `Duration`.
 ///
 /// `interval` stores three fields: `months`, `days`, and `microseconds`.
 /// Months map directly; the sub-day time is expanded into hours, minutes,
 /// seconds, and microseconds, preserving the sign of the value.
 ///
-/// A PostgreSQL `interval` can have fields of mixed sign (e.g.,
+/// A `PostgreSQL` `interval` can have fields of mixed sign (e.g.,
 /// `'1 month -2 days'::interval`), which is not a valid Temporal Duration.
 /// Such values are rejected with an error.
 #[must_use]
 #[pg_extern(immutable, parallel_safe, strict)]
 pub fn interval_to_duration(iv: Interval) -> Duration {
-    let months = iv.months() as i64;
-    let days = iv.days() as i64;
+    let months = i64::from(iv.months());
+    let days = i64::from(iv.days());
     let total_us = iv.micros(); // i64, can be negative
     // Split into hours / minutes / seconds / microseconds with the same sign.
     let (hours, rem_us) = (total_us / 3_600_000_000, total_us % 3_600_000_000);
@@ -716,7 +716,7 @@ pub fn interval_to_duration(iv: Interval) -> Duration {
         minutes,
         seconds,
         0,
-        rem_us as i128,
+        i128::from(rem_us),
         0,
     )
     .unwrap_or_else(|e| {
@@ -725,7 +725,7 @@ pub fn interval_to_duration(iv: Interval) -> Duration {
     Duration::from_temporal(&td)
 }
 
-/// Cast a `Duration` to a PostgreSQL `interval`.
+/// Cast a `Duration` to a `PostgreSQL` `interval`.
 ///
 /// The Temporal vector is collapsed:
 ///   - `years × 12 + months` → `interval` months field
@@ -832,8 +832,8 @@ pub fn duration_recv(internal: Internal) -> Duration {
     let mut us_bytes = [0u8; 16];
     let mut ns_bytes = [0u8; 16];
     unsafe {
-        pgrx::pg_sys::pq_copymsgbytes(buf, us_bytes.as_mut_ptr() as *mut _, 16);
-        pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr() as *mut _, 16);
+        pgrx::pg_sys::pq_copymsgbytes(buf, us_bytes.as_mut_ptr().cast(), 16);
+        pgrx::pg_sys::pq_copymsgbytes(buf, ns_bytes.as_mut_ptr().cast(), 16);
     }
     let microseconds = i128::from_be_bytes(us_bytes);
     let nanoseconds = i128::from_be_bytes(ns_bytes);
