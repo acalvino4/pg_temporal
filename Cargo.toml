@@ -23,6 +23,9 @@ temporal_rs = { version = "0.2.3", default-features = false, features = [
 ] }
 timezone_provider = "0.2.3"
 
+[target.'cfg(windows)'.dependencies]
+pgrx = { version = "0.18.0", default-features = false, features = ["cshim"] }
+
 [build-dependencies]
 timezone_provider = "0.2.3"
 zerovec = { version = "0.11.6", features = ["derive"] }
