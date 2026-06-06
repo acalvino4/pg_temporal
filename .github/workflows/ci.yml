@@ -18,7 +18,7 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
 
@@ -31,10 +31,10 @@ jobs:
     env:
       PG_VER: "17"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
       - name: Install clippy
         run: rustup component add clippy
@@ -61,12 +61,12 @@ jobs:
       matrix:
         pg: [16, 17, 18]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       # All three pg-version jobs share one build cache — most compiled code
       # (temporal_rs, icu, pgrx proc-macros, etc.) is identical across versions.
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: test-linux
           cache-on-failure: true
@@ -93,10 +93,10 @@ jobs:
       matrix:
         pg: [16, 17, 18]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: test-macos
           cache-on-failure: true
@@ -122,13 +122,13 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install rustfmt
         run: rustup component add rustfmt
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           cache-on-failure: true
 
@@ -136,7 +136,7 @@ jobs:
 
       # Cache the compiled PostgreSQL sources to avoid recompiling every run.
       - name: Cache pgrx PostgreSQL download
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.pgrx
           key: pgrx-pg17-${{ runner.os }}-${{ runner.arch }}-0.18.0
