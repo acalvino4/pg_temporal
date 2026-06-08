@@ -80,8 +80,11 @@ jobs:
       - name: Initialize pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} "$(which pg_config)"
 
+      - name: Grant postgres access to workspace
+        run: chown -R postgres:postgres .
+
       - name: Test
-        run: cargo pgrx test pg${{ matrix.pg }} --no-default-features --runas postgres
+        run: gosu postgres cargo pgrx test pg${{ matrix.pg }} --no-default-features
 
   # ── Tests: macOS ──────────────────────────────────────────────────────────
   test-macos:
