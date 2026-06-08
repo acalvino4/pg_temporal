@@ -54,19 +54,6 @@ jobs:
             os-name: macos
             arch: arm64
             pg: 18
-          # macOS x86_64 (Intel)
-          - os: macos-13
-            os-name: macos
-            arch: amd64
-            pg: 16
-          - os: macos-13
-            os-name: macos
-            arch: amd64
-            pg: 17
-          - os: macos-13
-            os-name: macos
-            arch: amd64
-            pg: 18
     permissions:
       contents: read
     runs-on: ${{ matrix.os }}

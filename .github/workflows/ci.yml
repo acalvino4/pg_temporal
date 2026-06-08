@@ -28,25 +28,22 @@ jobs:
     name: clippy
     needs: fmt
     runs-on: ubuntu-latest
+    container: pgxn/pgxn-tools@sha256:a54f1e66c563c7e47b34ed08597d0ee5da1168303b61ef47e66a4a9904ab849d
     env:
       PG_VER: "17"
     steps:
+      - name: Install PostgreSQL ${{ env.PG_VER }}
+        run: pg-start ${{ env.PG_VER }}
+
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Install clippy
-        run: rustup component add clippy
-
-      - uses: ./.github/actions/setup-linux-pg
-        with:
-          pg-version: ${{ env.PG_VER }}
-
       - uses: ./.github/actions/install-tools
 
       - name: Initialize pgrx
-        run: cargo pgrx init --pg${{ env.PG_VER }} /usr/lib/postgresql/${{ env.PG_VER }}/bin/pg_config
+        run: cargo pgrx init --pg${{ env.PG_VER }} "$(which pg_config)"
 
       - name: Clippy
         run: cargo clippy --no-default-features --features pg${{ env.PG_VER }} -- -Dwarnings
@@ -56,11 +53,15 @@ jobs:
     name: "test linux (pg${{ matrix.pg }})"
     needs: fmt
     runs-on: ubuntu-latest
+    container: pgxn/pgxn-tools@sha256:a54f1e66c563c7e47b34ed08597d0ee5da1168303b61ef47e66a4a9904ab849d
     strategy:
       fail-fast: false
       matrix:
         pg: [16, 17, 18]
     steps:
+      - name: Install PostgreSQL ${{ matrix.pg }}
+        run: pg-start ${{ matrix.pg }}
+
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # All three pg-version jobs share one build cache — most compiled code
@@ -71,14 +72,10 @@ jobs:
           shared-key: test-linux
           cache-on-failure: true
 
-      - uses: ./.github/actions/setup-linux-pg
-        with:
-          pg-version: ${{ matrix.pg }}
-
       - uses: ./.github/actions/install-tools
 
       - name: Initialize pgrx
-        run: cargo pgrx init --pg${{ matrix.pg }} /usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config
+        run: cargo pgrx init --pg${{ matrix.pg }} "$(which pg_config)"
 
       - name: Test
         run: cargo pgrx test pg${{ matrix.pg }} --no-default-features
