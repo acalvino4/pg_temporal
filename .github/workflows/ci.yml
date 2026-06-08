@@ -64,6 +64,7 @@ jobs:
         pg: [16, 17, 18]
     env:
       CARGO_HOME: ${{ github.workspace }}/.cargo
+      PGRX_HOME: ${{ github.workspace }}/.pgrx
     steps:
       - name: Install PostgreSQL ${{ matrix.pg }}
         run: pg-start ${{ matrix.pg }}
