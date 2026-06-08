@@ -113,32 +113,37 @@ jobs:
             /var/run/postgresql/ || true
 
       # ── cargo-pgrx ─────────────────────────────────────────────────────────
-      - name: Cache cargo registry
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Cache project binaries
+        id: cache-bin
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-reg-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-reg-${{ runner.os }}-
+          path: .bin
+          key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Cache cargo-pgrx binary
-        id: cache-pgrx
+      - name: Cache cargo-run-bin
+        id: cache-run-bin
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          path: ~/.cargo/bin/cargo-pgrx
-          key: cargo-pgrx-0.18.0-${{ runner.os }}-${{ runner.arch }}
+          path: ~/.cargo/bin/cargo-run-bin
+          key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
 
-      - name: Install cargo-pgrx
-        if: steps.cache-pgrx.outputs.cache-hit != 'true'
-        run: cargo install cargo-pgrx --version 0.18.0 --locked
+      - name: Install cargo-run-bin
+        if: steps.cache-run-bin.outputs.cache-hit != 'true'
+        run: cargo install cargo-run-bin --version 1.7.5 --locked
+
+      - name: Install project binaries
+        if: steps.cache-bin.outputs.cache-hit != 'true'
+        run: cargo bin --install
 
       - name: Initialize pgrx
-        run: ~/.cargo/bin/cargo-pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
+        run: cargo pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
 
       # ── Build extension package ─────────────────────────────────────────────
       - name: Build (cargo pgrx package)
-        run: ~/.cargo/bin/cargo-pgrx package --pg-config "$PG_CONFIG"
+        run: cargo pgrx package --pg-config "$PG_CONFIG"
 
       # ── Assemble flat archive ───────────────────────────────────────────────
       - name: Assemble release archive
