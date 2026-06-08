@@ -1,0 +1,77 @@
+name: Assemble and upload release archive
+description: >
+  Assembles a flat .tar.gz release archive from a cargo pgrx package build
+  and uploads it as a workflow artifact.
+
+inputs:
+  pg-version:
+    description: PostgreSQL major version (e.g. 16, 17, 18)
+    required: true
+  os-name:
+    description: OS label used in the archive name (e.g. linux, macos)
+    required: true
+  arch:
+    description: Architecture label used in the archive name (e.g. amd64, arm64)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Assemble release archive
+      shell: bash
+      env:
+        PG_VER: ${{ inputs.pg-version }}
+        OS_NAME: ${{ inputs.os-name }}
+        ARCH: ${{ inputs.arch }}
+      run: |
+        VERSION="${GH_REF_NAME#v}"
+        STAGING="target/release/pg_temporal-pg${PG_VER}"
+        DIRNAME="pg_temporal-${VERSION}-pg${PG_VER}-${OS_NAME}-${ARCH}"
+        CONTROL=$(find "$STAGING" -name "pg_temporal.control" | head -1)
+        if ! grep -q "^trusted" "$CONTROL"; then
+          echo "trusted = true" >> "$CONTROL"
+        fi
+
+        # ── Gather files into flat directory ────────────────────────────────
+        mkdir -p "dist/$DIRNAME"
+        find "$STAGING" \( -name "pg_temporal.so" -o -name "pg_temporal.dylib" \) \
+          -exec cp {} "dist/$DIRNAME/" \;
+        find "$STAGING" -name "pg_temporal.control" -exec cp {} "dist/$DIRNAME/" \;
+        find "$STAGING" -name "pg_temporal--*.sql" -exec cp {} "dist/$DIRNAME/" \;
+        cp README.md "dist/$DIRNAME/"
+
+        # ── Generate install.sh ──────────────────────────────────────────────
+        cat > "dist/$DIRNAME/install.sh" << 'EOF'
+        #!/usr/bin/env bash
+        # Installs pg_temporal into the PostgreSQL found by pg_config.
+        # Set PG_CONFIG to target a specific PostgreSQL installation.
+        set -euo pipefail
+        PG_CONFIG="${PG_CONFIG:-$(command -v pg_config 2>/dev/null || true)}"
+        if [[ -z "$PG_CONFIG" ]]; then
+          echo "Error: pg_config not found. Install PostgreSQL or set PG_CONFIG." >&2
+          exit 1
+        fi
+        DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        LIB_DIR="$("$PG_CONFIG" --pkglibdir)"
+        EXT_DIR="$("$PG_CONFIG" --sharedir)/extension"
+        echo "Installing to:"
+        echo "  Library:    $LIB_DIR"
+        echo "  Extension:  $EXT_DIR"
+        for lib in "$DIR"/pg_temporal.so "$DIR"/pg_temporal.dylib; do
+          [[ -f "$lib" ]] && cp "$lib" "$LIB_DIR/"
+        done
+        cp "$DIR"/pg_temporal.control "$DIR"/pg_temporal--*.sql "$EXT_DIR/"
+        echo "Done. Run: CREATE EXTENSION pg_temporal;"
+        EOF
+        chmod +x "dist/$DIRNAME/install.sh"
+
+        # ── Create tarball ────────────────────────────────────────────────────
+        tar -czf "${DIRNAME}.tar.gz" -C dist "$DIRNAME"
+        echo "ARTIFACT=${DIRNAME}.tar.gz" >> "$GITHUB_ENV"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ env.ARTIFACT }}
+        path: ${{ env.ARTIFACT }}
+        if-no-files-found: error

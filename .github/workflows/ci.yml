@@ -136,7 +136,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.pgrx
-          key: pgrx-pg17-${{ runner.os }}-${{ runner.arch }}-0.18.0
+          key: pgrx-pg17-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}
 
       - name: Initialize pgrx (download & compile PostgreSQL 17)
         shell: bash
