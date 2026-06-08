@@ -74,69 +74,21 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       # ── Install PostgreSQL ──────────────────────────────────────────────────
-      - name: Install build dependencies (Linux)
+      - uses: ./.github/actions/setup-linux-pg
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            build-essential clang libclang-dev llvm-dev \
-            pkg-config libssl-dev libz-dev wget gnupg
-          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
-            > /etc/apt/sources.list.d/pgdg.list'
-          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql-${{ matrix.pg }} postgresql-server-dev-${{ matrix.pg }}
+        with:
+          pg-version: ${{ matrix.pg }}
 
-      - name: Install PostgreSQL (macOS via Homebrew)
+      - uses: ./.github/actions/setup-macos-pg
         if: runner.os == 'macOS'
-        run: |
-          HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
-            brew install postgresql@${{ matrix.pg }}
-          echo "$(brew --prefix postgresql@${{ matrix.pg }})/bin" >> "$GITHUB_PATH"
-
-      # ── pg_config path ─────────────────────────────────────────────────────
-      - name: Resolve pg_config path (Linux)
-        if: runner.os == 'Linux'
-        run: echo "PG_CONFIG=/usr/lib/postgresql/${{ matrix.pg }}/bin/pg_config" >> "$GITHUB_ENV"
-
-      - name: Resolve pg_config path (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "PG_CONFIG=$(brew --prefix postgresql@${{ matrix.pg }})/bin/pg_config" >> "$GITHUB_ENV"
-
-      - name: Fix PostgreSQL permissions for pgrx
-        if: runner.os == 'Linux'
-        run: |
-          sudo chmod a+rwx \
-            "$("$PG_CONFIG" --pkglibdir)" \
-            "$("$PG_CONFIG" --sharedir)/extension" \
-            /var/run/postgresql/ || true
+        with:
+          pg-version: ${{ matrix.pg }}
 
       # ── cargo-pgrx ─────────────────────────────────────────────────────────
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Cache project binaries
-        id: cache-bin
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: .bin
-          key: bin-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.toml') }}
-
-      - name: Cache cargo-run-bin
-        id: cache-run-bin
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: ~/.cargo/bin/cargo-run-bin
-          key: cargo-run-bin-1.7.5-${{ runner.os }}-${{ runner.arch }}
-
-      - name: Install cargo-run-bin
-        if: steps.cache-run-bin.outputs.cache-hit != 'true'
-        run: cargo install cargo-run-bin --version 1.7.5 --locked
-
-      - name: Install project binaries
-        if: steps.cache-bin.outputs.cache-hit != 'true'
-        run: cargo bin --install
+      - uses: ./.github/actions/install-tools
 
       - name: Initialize pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"

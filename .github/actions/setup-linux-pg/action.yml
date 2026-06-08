@@ -40,3 +40,4 @@ runs:
           "$(pg_config --pkglibdir)" \
           "$(pg_config --sharedir)/extension" \
           /var/run/postgresql/ || true
+        echo "PG_CONFIG=/usr/lib/postgresql/${{ inputs.pg-version }}/bin/pg_config" >> "$GITHUB_ENV"
