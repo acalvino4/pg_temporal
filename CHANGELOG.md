@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.1] - 2026-05-05
-
 ### Added
 
 - `Instant` type: a fixed point in time (nanosecond precision), analogous to `timestamptz` but without timezone assumptions
@@ -32,4 +30,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Distribution pipeline: GitHub Actions CI (fmt, clippy, tests on pg16/17/18 × Linux/macOS/Windows) and release workflow (binary archives + PGXN source zip on tagged releases)
 
 [Unreleased]: https://github.com/acalvino4/pg_temporal/compare/v0.0.1...HEAD
-[0.0.1]: https://github.com/acalvino4/pg_temporal/releases/tag/v0.0.1

@@ -4,9 +4,16 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version string for artifact naming (e.g. 0.1.0)"
+        required: true
+        default: "0.0.0-test"
 
 env:
   CARGO_TERM_COLOR: always
+  GH_REF_NAME: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
 
 # Deny all token permissions by default; individual jobs grant only what they need.
 permissions: {}
@@ -136,8 +143,6 @@ jobs:
       # ── Assemble flat archive ───────────────────────────────────────────────
       - name: Assemble release archive
         shell: bash
-        env:
-          GH_REF_NAME: ${{ github.ref_name }}
         run: |
           VERSION="${GH_REF_NAME#v}"
           PG_VER="${{ matrix.pg }}"
@@ -201,6 +206,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -217,8 +223,6 @@ jobs:
           merge-multiple: true
 
       - name: Create PGXN source zip
-        env:
-          GH_REF_NAME: ${{ github.ref_name }}
         run: |
           VERSION="${GH_REF_NAME#v}"
           git archive \
@@ -230,7 +234,6 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REF_NAME: ${{ github.ref_name }}
         run: |
           TAG="$GH_REF_NAME"
           VERSION="${TAG#v}"
@@ -249,7 +252,6 @@ jobs:
         env:
           PGXN_USERNAME: ${{ secrets.PGXN_USERNAME }}
           PGXN_PASSWORD: ${{ secrets.PGXN_PASSWORD }}
-          GH_REF_NAME: ${{ github.ref_name }}
         run: |
           VERSION="${GH_REF_NAME#v}"
           ZIP="artifacts/pg_temporal-${VERSION}.zip"

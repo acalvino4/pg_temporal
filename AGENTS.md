@@ -38,3 +38,6 @@ Key properties: nanosecond precision, IANA timezone semantics, full DST disambig
 - Timezone list: `src/tz_canonical_list.txt` (append-only)
 - Project binaries (cargo-pgrx, cargo-release) are managed via cargo-run-bin; install with `cargo bin --install`, invoked via the `cargo pgrx` alias in `.cargo/config.toml`
 
+## Directives
+
+- If prompt is merely a question, DON'T make updates; just answer it (still thinking or searching for context as necessary).
