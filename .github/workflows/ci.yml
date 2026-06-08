@@ -31,6 +31,7 @@ jobs:
     container: pgxn/pgxn-tools@sha256:a54f1e66c563c7e47b34ed08597d0ee5da1168303b61ef47e66a4a9904ab849d
     env:
       PG_VER: "17"
+      CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
       - name: Install PostgreSQL ${{ env.PG_VER }}
         run: pg-start ${{ env.PG_VER }}
@@ -61,11 +62,16 @@ jobs:
       fail-fast: false
       matrix:
         pg: [16, 17, 18]
+    env:
+      CARGO_HOME: ${{ github.workspace }}/.cargo
     steps:
       - name: Install PostgreSQL ${{ matrix.pg }}
         run: pg-start ${{ matrix.pg }}
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Create writable Cargo home
+        run: mkdir -p "$CARGO_HOME"
 
       # All three pg-version jobs share one build cache — most compiled code
       # (temporal_rs, icu, pgrx proc-macros, etc.) is identical across versions.
@@ -81,7 +87,7 @@ jobs:
         run: cargo pgrx init --pg${{ matrix.pg }} "$(which pg_config)"
 
       - name: Grant postgres access to workspace
-        run: chown -R postgres:postgres .
+        run: chown -R postgres:postgres "$GITHUB_WORKSPACE"
 
       - name: Test
         run: gosu postgres cargo pgrx test pg${{ matrix.pg }} --no-default-features
