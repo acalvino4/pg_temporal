@@ -19,137 +19,86 @@ env:
 permissions: {}
 
 jobs:
-  # ── Build binary packages ────────────────────────────────────────────────────
-  # Produces one .tar.gz per (platform × PG version).
-  # The archive is flat: .so/.dylib + .control (with trusted=true) + .sql + install.sh
-  build:
-    name: "build ${{ matrix.os-name }}-${{ matrix.arch }} pg${{ matrix.pg }}"
+  # ── Build binary packages: Linux ─────────────────────────────────────────────
+  # Produces one .tar.gz per PG version for linux-amd64.
+  build-linux:
+    name: "build linux-amd64 pg${{ matrix.pg }}"
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # Linux x86_64
-          - os: ubuntu-latest
-            os-name: linux
-            arch: amd64
-            pg: 16
-          - os: ubuntu-latest
-            os-name: linux
-            arch: amd64
-            pg: 17
-          - os: ubuntu-latest
-            os-name: linux
-            arch: amd64
-            pg: 18
-          # macOS arm64 (M-series)
-          - os: macos-14
-            os-name: macos
-            arch: arm64
-            pg: 16
-          - os: macos-14
-            os-name: macos
-            arch: arm64
-            pg: 17
-          - os: macos-14
-            os-name: macos
-            arch: arm64
-            pg: 18
+        pg: [16, 17, 18]
     permissions:
       contents: read
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    container: pgxn/pgxn-tools@sha256:a54f1e66c563c7e47b34ed08597d0ee5da1168303b61ef47e66a4a9904ab849d
+    steps:
+      - name: Install PostgreSQL ${{ matrix.pg }}
+        run: pg-start ${{ matrix.pg }}
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: release-linux
+          cache-on-failure: true
+
+      - uses: ./.github/actions/install-tools
+
+      - name: Initialize pgrx
+        run: cargo pgrx init --pg${{ matrix.pg }} "$(which pg_config)"
+
+      - name: Build (cargo pgrx package)
+        run: cargo pgrx package --pg-config "$(which pg_config)"
+
+      - uses: ./.github/actions/assemble-release
+        with:
+          pg-version: ${{ matrix.pg }}
+          os-name: linux
+          arch: amd64
+
+  # ── Build binary packages: macOS ─────────────────────────────────────────────
+  # Produces one .tar.gz per PG version for macos-arm64.
+  build-macos:
+    name: "build macos-arm64 pg${{ matrix.pg }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: [16, 17, 18]
+    permissions:
+      contents: read
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      # ── Install PostgreSQL ──────────────────────────────────────────────────
-      - uses: ./.github/actions/setup-linux-pg
-        if: runner.os == 'Linux'
-        with:
-          pg-version: ${{ matrix.pg }}
-
-      - uses: ./.github/actions/setup-macos-pg
-        if: runner.os == 'macOS'
-        with:
-          pg-version: ${{ matrix.pg }}
-
-      # ── cargo-pgrx ─────────────────────────────────────────────────────────
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: release-macos
+          cache-on-failure: true
+
+      - uses: ./.github/actions/setup-macos-pg
+        with:
+          pg-version: ${{ matrix.pg }}
 
       - uses: ./.github/actions/install-tools
 
       - name: Initialize pgrx
         run: cargo pgrx init --pg${{ matrix.pg }} "$PG_CONFIG"
 
-      # ── Build extension package ─────────────────────────────────────────────
       - name: Build (cargo pgrx package)
         run: cargo pgrx package --pg-config "$PG_CONFIG"
 
-      # ── Assemble flat archive ───────────────────────────────────────────────
-      - name: Assemble release archive
-        shell: bash
-        run: |
-          VERSION="${GH_REF_NAME#v}"
-          PG_VER="${{ matrix.pg }}"
-          OS="${{ matrix.os-name }}"
-          ARCH="${{ matrix.arch }}"
-
-          STAGING="target/release/pg_temporal-pg${PG_VER}"
-          DIRNAME="pg_temporal-${VERSION}-pg${PG_VER}-${OS}-${ARCH}"
-
-          # ── Patch trusted = true into the control file ──────────────────────
-          CONTROL=$(find "$STAGING" -name "pg_temporal.control" | head -1)
-          if ! grep -q "^trusted" "$CONTROL"; then
-            echo "trusted = true" >> "$CONTROL"
-          fi
-
-          # ── Gather files into flat directory ────────────────────────────────
-          mkdir -p "dist/$DIRNAME"
-          find "$STAGING" \( -name "pg_temporal.so" -o -name "pg_temporal.dylib" \) \
-            -exec cp {} "dist/$DIRNAME/" \;
-          find "$STAGING" -name "pg_temporal.control" -exec cp {} "dist/$DIRNAME/" \;
-          find "$STAGING" -name "pg_temporal--*.sql" -exec cp {} "dist/$DIRNAME/" \;
-          cp README.md "dist/$DIRNAME/"
-
-          # ── Generate install.sh ──────────────────────────────────────────────
-          cat > "dist/$DIRNAME/install.sh" << 'EOF'
-          #!/usr/bin/env bash
-          # Installs pg_temporal into the PostgreSQL found by pg_config.
-          # Set PG_CONFIG to target a specific PostgreSQL installation.
-          set -euo pipefail
-          PG_CONFIG="${PG_CONFIG:-$(command -v pg_config 2>/dev/null || true)}"
-          if [[ -z "$PG_CONFIG" ]]; then
-            echo "Error: pg_config not found. Install PostgreSQL or set PG_CONFIG." >&2
-            exit 1
-          fi
-          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-          LIB_DIR="$("$PG_CONFIG" --pkglibdir)"
-          EXT_DIR="$("$PG_CONFIG" --sharedir)/extension"
-          echo "Installing to:"
-          echo "  Library:    $LIB_DIR"
-          echo "  Extension:  $EXT_DIR"
-          for lib in "$DIR"/pg_temporal.so "$DIR"/pg_temporal.dylib; do
-            [[ -f "$lib" ]] && cp "$lib" "$LIB_DIR/"
-          done
-          cp "$DIR"/pg_temporal.control "$DIR"/pg_temporal--*.sql "$EXT_DIR/"
-          echo "Done. Run: CREATE EXTENSION pg_temporal;"
-          EOF
-          chmod +x "dist/$DIRNAME/install.sh"
-
-          # ── Create tarball ────────────────────────────────────────────────────
-          tar -czf "${DIRNAME}.tar.gz" -C dist "$DIRNAME"
-          echo "ARTIFACT=${DIRNAME}.tar.gz" >> "$GITHUB_ENV"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: ./.github/actions/assemble-release
         with:
-          name: ${{ env.ARTIFACT }}
-          path: ${{ env.ARTIFACT }}
-          if-no-files-found: error
+          pg-version: ${{ matrix.pg }}
+          os-name: macos
+          arch: arm64
 
   # ── Create GitHub Release ───────────────────────────────────────────────────
   release:
     name: Create GitHub Release
-    needs: build
+    needs: [build-linux, build-macos]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
