@@ -77,7 +77,7 @@ and measure only the lookup functions.
 ```toml
 # Cargo.toml
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "tz_lookup"

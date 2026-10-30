@@ -17,23 +17,23 @@ pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
 pg_test = []
 
 [dependencies]
-pgrx = { version = "0.18.0", default-features = false }
-temporal_rs = { version = "0.2.3", default-features = false, features = [
+pgrx = { version = "0.19.3", default-features = false }
+temporal_rs = { version = "0.2.6", default-features = false, features = [
     "compiled_data",
 ] }
-timezone_provider = "0.2.3"
+timezone_provider = "0.2.6"
 
 [target.'cfg(windows)'.dependencies]
-pgrx = { version = "0.18.0", default-features = false, features = ["cshim"] }
+pgrx = { version = "0.19.3", default-features = false, features = ["cshim"] }
 
 [build-dependencies]
-timezone_provider = "0.2.3"
-zerovec = { version = "0.11.6", features = ["derive"] }
-zerotrie = "0.2.4"
+timezone_provider = "0.2.6"
+zerovec = { version = "0.11.9", features = ["derive"] }
+zerotrie = "0.2.5"
 
 [dev-dependencies]
-pgrx-tests = "0.18.0"
-criterion = { version = "0.5", features = ["html_reports"] }
+pgrx-tests = "0.19.3"
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [[bench]]
 name = "tz_lookup"
@@ -41,8 +41,8 @@ path = "benchmarking/tz_lookup.rs"
 harness = false
 
 [package.metadata.bin]
-cargo-pgrx = { version = "0.18.0", locked = true }
-cargo-release = { version = "1.1.2", locked = true }
+cargo-pgrx = { version = "0.19.3", locked = true }
+cargo-release = { version = "1.1.7", locked = true }
 
 [lints.rust]
 

@@ -233,6 +233,7 @@ pub fn instant_subtract(inst: Instant, dur: Duration) -> Instant {
 }
 
 /// Returns the duration elapsed from `other` to `inst`.
+///
 /// Note: with `DifferenceSettings::default()`, Instant differences are
 /// expressed in seconds (the largest calendar-free unit), e.g. `PT7200S`
 /// for a 2-hour gap.

@@ -32,7 +32,7 @@ Key properties: nanosecond precision, IANA timezone semantics, full DST disambig
 
 ## Tech Notes
 
-- pgrx 0.18.0: use `PgVarlenaInOutFuncs` and `#[bikeshed_postgres_type_manually_impl_from_into_datum]` as a standalone attr (NOT nested inside `#[pgrx(...)]`)
+- pgrx 0.19.3: use `PgVarlenaInOutFuncs` and `#[bikeshed_postgres_type_manually_impl_from_into_datum]` as a standalone attr (NOT nested inside `#[pgrx(...)]`)
 - Four types: Instant, ZonedDateTime, PlainDateTime, Duration — all use compact binary `PgVarlena<T>` on-disk storage
 - Build-time generated indices: `$OUT_DIR/tz_index.rs` (598 IANA TZ IDs) and `$OUT_DIR/cal_index.rs` (17 calendars)
 - Timezone list: `src/tz_canonical_list.txt` (append-only)

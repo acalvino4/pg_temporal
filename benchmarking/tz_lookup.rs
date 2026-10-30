@@ -7,8 +7,9 @@
 //
 // Run with: `cargo bench --bench tz_lookup`
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::collections::HashMap;
+use std::hint::black_box;
 
 // ---------------------------------------------------------------------------
 // Static TZ data (598 IANA timezone IDs, same set as storage-redesign)
